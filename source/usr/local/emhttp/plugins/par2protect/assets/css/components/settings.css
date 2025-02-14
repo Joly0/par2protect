@@ -1,0 +1,43 @@
+/* Settings Page Styles */
+
+.settings-group {
+    margin-bottom: 20px;
+    padding: 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background-color: var(--background);
+}
+
+.settings-group select,
+.settings-group input[type="number"] {
+    width: 200px;
+    padding: 4px 8px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background-color: var(--background);
+    color: var(--text);
+}
+
+.settings-group input[type="number"] {
+    width: 100px;
+}
+
+/* Description text */
+.settings-group dt {
+    margin-bottom: 5px;
+    font-weight: 500;
+}
+
+.settings-group dd {
+    margin-bottom: 15px;
+    margin-left: 0;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .settings-group select,
+    .settings-group input[type="number"] {
+        width: 100%;
+        max-width: 200px;
+    }
+}

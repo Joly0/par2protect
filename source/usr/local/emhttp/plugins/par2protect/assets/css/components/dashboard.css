@@ -1,0 +1,177 @@
+/* Dialog styling */
+.par2-dialog {
+    position: fixed !important;
+    top: 15% !important;
+    left: 50% !important;
+    transform: translateX(-50%) !important;
+    overflow-y: hidden !important;
+    border: 1px solid #ccc;
+}
+/* Dashboard Styles */
+
+/* Status Cards */
+.par2-status-card {
+    background-color: var(--background);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 15px;
+    margin-bottom: 20px;
+    position: relative;
+    overflow: hidden;
+}
+
+.par2-status-card h4 {
+    margin-top: 0;
+    margin-bottom: 15px;
+    font-size: 1.1em;
+    color: var(--text);
+}
+
+.par2-status-card h4 i {
+    margin-right: 5px;
+}
+
+/* Grid Layout */
+.grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 15px;
+    margin: 0;
+    padding: 0;
+}
+
+.grid-item {
+    display: flex;
+    flex-direction: column;
+    margin: 0;
+    padding: 0;
+}
+
+.grid-item .label {
+    font-size: 0.9em;
+    color: var(--text-muted);
+    margin-bottom: 5px;
+}
+
+.grid-item .value {
+    font-size: 1.1em;
+    font-weight: 500;
+}
+
+/* Health Indicator */
+.health-indicator {
+    display: inline-block;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 0.9em;
+    font-weight: 500;
+}
+
+.health-indicator.good {
+    background-color: #28a745;
+    color: white;
+}
+
+.health-indicator.warning {
+    background-color: #ffc107;
+    color: black;
+}
+
+.health-indicator.error {
+    background-color: #dc3545;
+    color: white;
+}
+
+.health-indicator.unknown {
+    background-color: #6c757d;
+    color: white;
+}
+
+/* Active Operations */
+.operation-item {
+    background-color: rgba(0,0,0,0.05);
+    border-radius: 4px;
+    padding: 10px;
+    margin-bottom: 10px;
+}
+
+.operation-item:last-child {
+    margin-bottom: 0;
+}
+
+/* Recent Activity Table */
+.par2-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 0;
+    padding: 0;
+}
+
+.par2-table th,
+.par2-table td {
+    padding: 8px;
+    text-align: left;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.par2-table th {
+    background-color: var(--table-header-bg);
+    font-weight: bold;
+}
+
+.par2-table tr:hover {
+    background-color: var(--table-hover-bg);
+}
+
+/* File Tree */
+.folder-select {
+    display: flex;
+    align-items: flex-start;
+    gap: 2rem;
+    margin-bottom: 15px;
+}
+
+.folder-label {
+    padding-top: 5px;
+}
+
+.filetree-wrapper {
+    flex: 1;
+}
+
+.filetree-container {
+    display: block !important;
+    width: 100% !important;
+    text-align: left;
+}
+
+.filetree-container textarea {
+    width: 100% !important;
+    text-align: left;
+}
+
+.ft {
+    position: static !important;
+    margin-top: 5px;
+    width: 100% !important;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* Dashboard Dialog Styles */
+.par2-dialog {
+    min-width: 500px;
+}
+
+.par2-dialog .dialog-content {
+    padding: 20px;
+}
+
+.par2-dialog .form-group {
+    margin-bottom: 15px;
+}

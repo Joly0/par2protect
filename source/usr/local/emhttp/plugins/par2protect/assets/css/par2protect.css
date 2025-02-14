@@ -1,0 +1,425 @@
+/* PAR2Protect Plugin Styles */
+
+/* Status Cards */
+.par2-status-card {
+    background-color: var(--background);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 15px;
+    margin-bottom: 20px;
+    position: relative;
+    overflow: hidden;
+}
+
+.par2-status-card h4 {
+    margin-top: 0;
+    margin-bottom: 15px;
+    font-size: 1.1em;
+    color: var(--text);
+}
+
+.par2-status-card h4 i {
+    margin-right: 5px;
+}
+
+/* Grid Layout */
+.grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 15px;
+    margin: 0;
+    padding: 0;
+}
+
+.grid-item {
+    display: flex;
+    flex-direction: column;
+    margin: 0;
+    padding: 0;
+}
+
+.grid-item .label {
+    font-size: 0.9em;
+    color: var(--text-muted);
+    margin-bottom: 5px;
+}
+
+.grid-item .value {
+    font-size: 1.1em;
+    font-weight: 500;
+}
+
+/* Health Indicator */
+.health-indicator {
+    display: inline-block;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 0.9em;
+    font-weight: 500;
+}
+
+.health-indicator.good {
+    background-color: #28a745;
+    color: white;
+}
+
+.health-indicator.warning {
+    background-color: #ffc107;
+    color: black;
+}
+
+.health-indicator.error {
+    background-color: #dc3545;
+    color: white;
+}
+
+.health-indicator.unknown {
+    background-color: #6c757d;
+    color: white;
+}
+
+/* Active Operations */
+.operation-item {
+    background-color: rgba(0,0,0,0.05);
+    border-radius: 4px;
+    padding: 10px;
+    margin-bottom: 10px;
+}
+
+.operation-item:last-child {
+    margin-bottom: 0;
+}
+
+/* Tables */
+.par2-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 0;
+    padding: 0;
+}
+
+.par2-table th,
+.par2-table td {
+    padding: 8px;
+    text-align: left;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.par2-table th {
+    background-color: var(--table-header-bg);
+    font-weight: bold;
+}
+
+.par2-table tr:hover {
+    background-color: var(--table-hover-bg);
+}
+
+/* Loading State */
+.loading {
+    position: relative;
+    pointer-events: none;
+}
+
+.loading::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(255, 255, 255, 0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+.loading::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 30px;
+    height: 30px;
+    margin: -15px 0 0 -15px;
+    border: 3px solid #f3f3f3;
+    border-top: 3px solid #3498db;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    z-index: 1001;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* Notice Container */
+.notice-container {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 9999;
+    background-color: #28a745;
+    color: white;
+    padding: 10px 20px;
+    border-radius: 4px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+    transition: all 0.3s ease;
+}
+
+/* Dialog */
+.par2-dialog {
+    display: none;
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: var(--background);
+    padding: 20px;
+    border-radius: 4px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+    z-index: 1000;
+    width: 90%;
+    max-width: 600px;
+}
+
+.par2-dialog h3 {
+    margin-top: 0;
+    margin-bottom: 20px;
+}
+
+.form-group {
+    margin-bottom: 15px;
+    margin-top: 15px;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: 500;
+}
+
+.form-group input[type="text"],
+.form-group select {
+    width: 100%;
+    padding: 8px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background: var(--background);
+    color: var(--text);
+}
+
+.form-actions {
+    margin-top: 20px;
+    text-align: right;
+}
+
+.form-actions button {
+    margin-left: 10px;
+}
+
+/* File Tree */
+.folder-select {
+    display: flex;
+    align-items: flex-start;
+    gap: 2rem;
+    margin-bottom: 15px;
+}
+
+.folder-label {
+    padding-top: 5px;
+}
+
+.filetree-wrapper {
+    flex: 1;
+}
+
+.filetree-container {
+    display: block !important;
+    width: 100% !important;
+    text-align: left;
+}
+
+.filetree-container textarea {
+    width: 100% !important;
+    text-align: left;
+}
+
+.ft {
+    position: static !important;
+    margin-top: 5px;
+    width: 100% !important;
+}
+
+/* Error Message */
+.error-message {
+    background-color: #dc3545;
+    color: white;
+    padding: 10px;
+    margin: 10px 0;
+    border-radius: 4px;
+    display: none;
+}
+
+/* Protected Files List */
+.protected-files-list {
+    margin: 0;
+    padding: 0;
+}
+
+.action-bar {
+    margin-bottom: 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.action-bar .left-actions {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.action-bar .right-actions {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+.filter-dropdown {
+    padding: 4px 8px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background-color: var(--background);
+    color: var(--text);
+    min-width: 120px;
+}
+
+/* Table Columns */
+.checkbox-column {
+    width: 40px;
+    text-align: center !important;
+}
+
+.status-column {
+    width: 120px;
+}
+
+.size-column {
+    width: 100px;
+}
+
+.date-column {
+    width: 160px;
+}
+
+.actions-column {
+    width: 100px;
+}
+
+.mode-column {
+    width: 100px;
+}
+
+.redundancy-column {
+    width: 100px;
+}
+
+/* Status Badges */
+.status-badge {
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 0.9em;
+    font-weight: 500;
+    text-transform: uppercase;
+}
+
+.status-badge.protected {
+    background-color: #28a745;
+    color: white;
+}
+
+.status-badge.unprotected {
+    background-color: #dc3545;
+    color: white;
+}
+
+.status-badge.damaged {
+    background-color: #ffc107;
+    color: black;
+}
+
+.status-badge.missing {
+    background-color: #6c757d;
+    color: white;
+}
+
+.status-badge.error {
+    background-color: #dc3545;
+    color: white;
+}
+
+.status-badge.unknown {
+    background-color: #6c757d;
+    color: white;
+}
+
+/* Checkbox Group */
+.checkbox-group {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+}
+
+.checkbox-group label {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-weight: normal;
+    width: fit-content;
+    cursor: pointer;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .par2-dialog {
+        width: 95%;
+        max-height: 90vh;
+        overflow-y: auto;
+    }
+    
+    .checkbox-group {
+        grid-template-columns: 1fr;
+    }
+    
+    .action-bar {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    
+    .action-bar .left-actions,
+    .action-bar .right-actions {
+        width: 100%;
+    }
+    
+    .filter-dropdown {
+        width: 100%;
+    }
+    
+    .protected-files-table {
+        display: block;
+        overflow-x: auto;
+        white-space: nowrap;
+    }
+}

@@ -1,0 +1,33 @@
+#!/bin/bash
+DIR="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
+tmpdir="/tmp/tmp.$((RANDOM * 19318203981230))"
+plugin=$(basename "$DIR")
+version=$(date +"%Y.%m.%d")
+archive="par2protect-$version-x86_64-1"
+packages_dir="$DIR/packages"
+
+echo "Creating package $archive..."
+
+# Create temporary and packages directories
+mkdir -p "$tmpdir"
+mkdir -p "$packages_dir"
+
+# Change to source directory before copying
+cd "$DIR/source" || exit 1
+
+# Copy all files (now relative to source/)
+cp --parents $(find . -type f ! -iname "makepkg" ! -iname ".*") "$tmpdir/"
+
+# Create package
+cd "$tmpdir" || exit 1
+tar -cJf "$packages_dir/$archive.txz" .
+
+# Create MD5 file
+cd "$packages_dir" || exit 1
+md5sum "$archive.txz" > "$archive.md5"
+
+# Cleanup
+rm -rf "$tmpdir"
+
+echo "Package created: packages/$archive.txz"
+echo "MD5 file created: packages/$archive.md5"

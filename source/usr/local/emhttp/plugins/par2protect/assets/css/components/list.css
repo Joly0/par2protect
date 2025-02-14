@@ -1,0 +1,119 @@
+/* Protected Files List Styles */
+
+.protected-files-list {
+    margin: 0;
+    padding: 0;
+}
+
+/* Action Bar */
+.action-bar {
+    margin-bottom: 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.action-bar .left-actions {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.action-bar .right-actions {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+.filter-dropdown {
+    padding: 4px 8px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background-color: var(--background);
+    color: var(--text);
+    min-width: 120px;
+}
+
+/* Protected Files Table */
+.protected-files-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 0;
+    padding: 0;
+}
+
+.protected-files-table th,
+.protected-files-table td {
+    padding: 8px;
+    text-align: left;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.protected-files-table th {
+    background-color: var(--table-header-bg);
+    font-weight: bold;
+}
+
+.protected-files-table tr:hover {
+    background-color: var(--table-hover-bg);
+}
+
+/* Table Columns */
+.checkbox-column {
+    width: 40px;
+    text-align: center !important;
+}
+
+.status-column {
+    width: 120px;
+}
+
+.size-column {
+    width: 100px;
+}
+
+.date-column {
+    width: 160px;
+}
+
+.actions-column {
+    width: 100px;
+}
+
+.mode-column {
+    width: 100px;
+}
+
+.redundancy-column {
+    width: 100px;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .action-bar {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    
+    .action-bar .left-actions,
+    .action-bar .right-actions {
+        width: 100%;
+    }
+    
+    .filter-dropdown {
+        width: 100%;
+    }
+    
+    .protected-files-table {
+        display: block;
+        overflow-x: auto;
+        white-space: nowrap;
+    }
+}
+
+.select-item {
+    margin: 0px 0px 0px 10px;
+}

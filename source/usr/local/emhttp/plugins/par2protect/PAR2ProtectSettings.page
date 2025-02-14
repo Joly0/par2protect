@@ -1,0 +1,88 @@
+Menu="Utilities"
+Title="PAR2Protect Settings"
+Icon="shield"
+Type="xmenu"
+Code="0"
+---
+<link type="text/css" rel="stylesheet" href="/plugins/par2protect/assets/css/components/common.css">
+<link type="text/css" rel="stylesheet" href="/plugins/par2protect/assets/css/components/settings.css">
+<script src="/plugins/par2protect/assets/js/components/common.js"></script>
+<script src="/plugins/par2protect/assets/js/components/settings.js"></script>
+
+<form markdown="1" method="POST" action="/update.php" target="progressFrame">
+<input type="hidden" name="#file" value="par2protect/par2protect.cfg">
+
+<div markdown="1">
+Display Settings:
+</div>
+
+<div class="settings-group">
+<?php
+$plugin = 'par2protect';
+$cfg = parse_plugin_cfg($plugin);
+?>
+
+_(Menu Location)_:
+: <select name="place">
+  <?=mk_option($cfg['place'], "Tasks:95", _("Header menu"))?>
+  <?=mk_option($cfg['place'], "SystemInformation", _("Tools menu"))?>
+  </select>
+</div>
+
+<div markdown="1">
+Protection Settings:
+</div>
+
+<div class="settings-group">
+Default Redundancy Level (%):
+: <select name="default_redundancy">
+  <?php
+  $configFile = "/boot/config/plugins/par2protect/par2protect.cfg";
+  $config = file_exists($configFile) ? parse_ini_file($configFile) : [];
+  
+  $currentRedundancy = $config['default_redundancy'] ?? 5;
+  for($i=1; $i<=20; $i++):
+  ?>
+  <option value="<?=$i?>" <?=$currentRedundancy==$i?'selected':''?>><?=$i?></option>
+  <?php endfor; ?>
+  </select>
+
+Verification Schedule:
+: <select name="verify_schedule">
+  <?php $currentSchedule = $config['verify_schedule'] ?? 'weekly'; ?>
+  <option value="daily" <?=$currentSchedule=='daily'?'selected':''?>>Daily</option>
+  <option value="weekly" <?=$currentSchedule=='weekly'?'selected':''?>>Weekly</option>
+  <option value="monthly" <?=$currentSchedule=='monthly'?'selected':''?>>Monthly</option>
+  </select>
+</div>
+
+<div markdown="1">
+Resource Management:
+</div>
+
+<div class="settings-group">
+Maximum CPU Usage (%):
+: <select name="max_cpu_usage">
+  <?php
+  $currentCpu = $config['max_cpu_usage'] ?? 50;
+  foreach([25,50,75,100] as $value):
+  ?>
+  <option value="<?=$value?>" <?=$currentCpu==$value?'selected':''?>><?=$value?></option>
+  <?php endforeach; ?>
+  </select>
+
+Maximum Memory Usage (MB):
+: <input type="number" name="max_memory" min="0" value="<?=$config['max_memory'] ?? ''?>" placeholder="Leave empty for unlimited">
+_(Set to 0 or leave empty for unlimited)_
+
+I/O Priority:
+: <select name="io_priority">
+  <?php $currentIo = $config['io_priority'] ?? 'low'; ?>
+  <option value="high" <?=$currentIo=='high'?'selected':''?>>High</option>
+  <option value="normal" <?=$currentIo=='normal'?'selected':''?>>Normal</option>
+  <option value="low" <?=$currentIo=='low'?'selected':''?>>Low</option>
+  </select>
+</div>
+
+<input type="submit" value="Apply">
+</form>

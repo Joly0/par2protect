@@ -1,0 +1,6 @@
+Menu="/boot/config/plugins/par2protect/par2protect.cfg place=SystemInformation"
+Title="PAR2Protect"
+Icon="shield"
+Type="xmenu"
+Tabs="true"
+---

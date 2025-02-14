@@ -1,0 +1,143 @@
+.filetree-wrapper {
+    max-width: 90%;
+}
+.filetree-container {
+    position: relative;
+    width: 100%;
+    max-width: 100%;
+}
+.selected-paths-container {
+    width: 100%;
+    height: 200px;
+    border: 1px solid #ccc;
+    display: flex;
+    cursor: default;
+    overflow: hidden;
+}
+.selected-paths-container:hover {
+    border-color: #888;
+}
+.selected-paths-container:empty::before {
+    content: 'Click to select paths';
+    color: #888;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+}
+
+/* New layout with fixed buttons column */
+.buttons-column {
+    flex-shrink: 0;
+    width: 36px;
+    padding: 0px 2px 0px 2px;
+    background: rgba(128, 128, 128, 0.05);
+    border-right: 1px solid rgba(128, 128, 128, 0.2);
+    overflow-y: hidden; /* Hide scrollbar but allow content to overflow */
+    position: relative;
+    margin-top: 0;
+}
+.content-column {
+    flex-grow: 1;
+    margin-left: 5px;
+    overflow: auto; /* Allow both horizontal and vertical scrolling */
+}
+
+/* Button styling */
+.button-wrapper {
+    height: 23px;
+    min-height: 23px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 2px 0;
+}
+.remove-path {
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+    border: none;
+    font-weight: bold;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: opacity 0.2s;
+    font-size: 12px;
+    padding: 0;
+    line-height: 1;
+    border-radius: 2px;
+    min-width: 100%;
+    margin: auto;
+}
+.remove-path:hover {
+    opacity: 0.9;
+}
+
+/* Path item styling */
+.path-item {
+    display: flex;
+    align-items: center;
+    border-bottom: 1px solid rgba(128, 128, 128, 0.1);
+    padding: 2px 0;
+    height: 25px;
+    min-height: 25px;
+    box-sizing: border-box;
+}
+.path-item:last-child {
+    border-bottom: none;
+}
+.path-text {
+    white-space: nowrap;
+    padding: 5px;
+    user-select: all;
+    font-family: monospace;
+    font-size: 0.95em;
+}
+
+/* File tree dialog styling */
+.ft {
+    padding: 10px;
+    margin-top: 5px;
+    width: auto;
+    display: none;
+    border: 1px solid #ccc;
+    box-sizing: border-box;
+    width: 100.5% !important;
+}
+.fileTreeDiv {
+    max-height: 300px;
+    overflow-y: auto;
+    margin-bottom: 5px;
+    min-width: 380px;
+    width: fit-content;
+}
+
+/* Scrollbar styling */
+.content-column::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+.content-column::-webkit-scrollbar-track {
+    background: rgba(128, 128, 128, 0.05);
+}
+.content-column::-webkit-scrollbar-thumb {
+    background: rgba(128, 128, 128, 0.3);
+    border-radius: 4px;
+}
+.content-column::-webkit-scrollbar-thumb:hover {
+    background: rgba(128, 128, 128, 0.5);
+}
+.content-column::-webkit-scrollbar-corner {
+    background: transparent;
+}
+.content-column {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(128, 128, 128, 0.3) rgba(128, 128, 128, 0.05);
+    scrollbar-gutter: stable;
+}
+
+/* Synchronize vertical scrolling */
+.content-column {
+    position: relative;
+}
