@@ -1,0 +1,20 @@
+#!/bin/bash
+
+case "$1" in
+'start')
+    # Start your service
+    ;;
+'stop')
+    # Stop your service
+    ;;
+'restart')
+    # Restart your service
+    $0 stop
+    sleep 1
+    $0 start
+    ;;
+*)
+    echo "Usage: $0 start|stop|restart"
+    exit 1
+    ;;
+esac

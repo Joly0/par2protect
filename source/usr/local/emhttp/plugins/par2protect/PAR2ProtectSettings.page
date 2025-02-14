@@ -1,0 +1,59 @@
+Menu="Utilities"
+Title="PAR2Protect Settings"
+Icon="shield"
+Type="xmenu"
+Code="0"
+---
+<script>
+$.getScript('/plugins/par2protect/assets/js/par2protect.js');
+</script>
+
+<link type="text/css" rel="stylesheet" href="/plugins/par2protect/assets/css/par2protect.css">
+
+<form markdown="1" method="POST" action="/update.php" target="progressFrame">
+<input type="hidden" name="#file" value="par2protect/par2protect.cfg">
+
+Protection Settings:
+: <div class="settings-group">
+    Default Redundancy Level (%):
+    : <select name="default_redundancy">
+      <?php
+      $current = parse_ini_file("/boot/config/plugins/par2protect/par2protect.cfg")['default_redundancy'] ?? 5;
+      for($i=1; $i<=20; $i++):
+      ?>
+      <option value="<?=$i?>" <?=$current==$i?'selected':''?>><?=$i?></option>
+      <?php endfor; ?>
+      </select>
+
+    Verification Schedule:
+    : <select name="verify_schedule">
+      <?php $current = parse_ini_file("/boot/config/plugins/par2protect/par2protect.cfg")['verify_schedule'] ?? 'weekly'; ?>
+      <option value="daily" <?=$current=='daily'?'selected':''?>>Daily</option>
+      <option value="weekly" <?=$current=='weekly'?'selected':''?>>Weekly</option>
+      <option value="monthly" <?=$current=='monthly'?'selected':''?>>Monthly</option>
+      </select>
+  </div>
+
+Resource Management:
+: <div class="settings-group">
+    Maximum CPU Usage (%):
+    : <select name="max_cpu_usage">
+      <?php
+      $current = parse_ini_file("/boot/config/plugins/par2protect/par2protect.cfg")['max_cpu_usage'] ?? 50;
+      foreach([25,50,75,100] as $value):
+      ?>
+      <option value="<?=$value?>" <?=$current==$value?'selected':''?>><?=$value?></option>
+      <?php endforeach; ?>
+      </select>
+
+    I/O Priority:
+    : <select name="io_priority">
+      <?php $current = parse_ini_file("/boot/config/plugins/par2protect/par2protect.cfg")['io_priority'] ?? 'low'; ?>
+      <option value="high" <?=$current=='high'?'selected':''?>>High</option>
+      <option value="normal" <?=$current=='normal'?'selected':''?>>Normal</option>
+      <option value="low" <?=$current=='low'?'selected':''?>>Low</option>
+      </select>
+  </div>
+
+<input type="submit" value="Apply">
+</form>
