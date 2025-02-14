@@ -1,0 +1,117 @@
+/* Checkbox styling */
+.directory-checkbox {
+    margin-right: 5px !important;
+    vertical-align: middle !important;
+    /* Remove transitions for immediate visual feedback */
+    transition: none !important;
+    /* Ensure checkboxes are always clickable unless explicitly disabled */
+    pointer-events: auto !important;
+}
+
+/* Subtle styling for disabled checkboxes */
+.directory-checkbox:disabled {
+    opacity: 0.5;
+    cursor: not-allowed !important;
+    pointer-events: none !important;
+}
+
+/* Make sure the filetree background matches the Unraid theme */
+.fileTree {
+    background-color: inherit !important;
+}
+
+/* Ensure the filetree has proper spacing */
+.jqueryFileTree {
+    margin: 0;
+    padding: 0;
+    font-size: 11px;
+    line-height: 18px;
+}
+
+/* Filetree picker container */
+.filetree-picker-container {
+    margin-bottom: 15px;
+    position: relative;
+}
+
+/* Selected paths list */
+.selected-paths-list {
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    padding: 8px;
+    margin-bottom: 8px;
+    min-height: 60px;
+    max-height: 200px;
+    overflow-y: auto;
+    background-color: inherit;
+    cursor: pointer;
+    transition: border-color 0.2s;
+}
+
+.selected-paths-list:hover {
+    border-color: #4CAF50;
+}
+
+/* Empty list message */
+.empty-list-message {
+    color: #999;
+    font-style: italic;
+    padding: 10px 0;
+    text-align: center;
+}
+
+/* Path item in the list */
+.path-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 5px;
+    margin-bottom: 5px;
+    border-radius: 3px;
+    background-color: rgba(0, 0, 0, 0.05);
+}
+
+/* Path text */
+.path-text {
+    flex-grow: 1;
+    word-break: break-all;
+}
+
+/* Remove button */
+.remove-path {
+    background: none;
+    border: none;
+    color: #f44336;
+    cursor: pointer;
+    font-size: 14px;
+    padding: 0 5px;
+}
+
+/* Filetree container */
+.filetree-container {
+    margin-top: 8px;
+    margin-bottom: 15px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    padding: 10px;
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+/* Hide file items in folders-only mode */
+.folders-only-mode li.file {
+    display: none !important;
+}
+
+/* Force hidden class - use !important to override any other styles */
+.force-hidden {
+    display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+    height: 0 !important;
+    width: 0 !important;
+    overflow: hidden !important;
+    position: absolute !important;
+    pointer-events: none !important;
+    z-index: -9999 !important;
+}

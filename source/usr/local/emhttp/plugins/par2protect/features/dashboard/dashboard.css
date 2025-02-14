@@ -1,0 +1,374 @@
+/* Ensure body has scrollbar when needed */
+body {
+    overflow-y: auto !important;
+}
+
+.content {
+    /* Removed fixed min-height as part of dynamic content height implementation */
+    /* min-height: 140vh; */
+    transition: min-height 0.3s ease;
+}
+
+/* Dialog styling */
+.par2-dialog {
+    position: absolute !important;
+    top: -40px !important;
+    left: 50% !important;
+    transform: translateX(-50%) !important;
+    overflow: visible !important;
+    border: 1px solid #ccc;
+}
+/* Dashboard Styles */
+
+/* Status Cards */
+.par2-status-card {
+    background-color: var(--background);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 15px;
+    margin-bottom: 20px;
+    position: relative;
+    overflow: hidden;
+}
+
+.par2-status-card h4 {
+    margin-top: 0;
+    margin-bottom: 15px;
+    font-size: 1.1em;
+}
+
+.par2-status-card h4 i {
+    margin-right: 5px;
+}
+
+/* Grid Layout */
+.grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 15px;
+    margin: 0;
+    padding: 0;
+}
+
+.grid-item {
+    display: flex;
+    flex-direction: column;
+    margin: 0;
+    padding: 0;
+}
+
+.grid-item .label {
+    font-size: 0.9em;
+    color: var(--text-muted);
+    margin-bottom: 5px;
+}
+
+.grid-item .value {
+    font-size: 1.1em;
+    font-weight: 500;
+}
+
+/* Health Indicator */
+.health-indicator {
+    display: inline-block;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 0.9em;
+    font-weight: 500;
+}
+
+.health-indicator.good {
+    background-color: #28a745;
+    color: white;
+}
+
+.health-indicator.warning {
+    background-color: #ffc107;
+    color: black;
+}
+
+.health-indicator.error {
+    background-color: #dc3545;
+    color: white;
+}
+
+.health-indicator.unknown {
+    background-color: #6c757d;
+    color: white;
+}
+
+/* Active Operations */
+.operation-item {
+    background-color: rgba(0,0,0,0.05);
+    border-radius: 4px;
+    padding: 10px;
+    margin-bottom: 10px;
+    position: relative;
+    border-left: 3px solid transparent;
+}
+
+.operation-item:last-child {
+    margin-bottom: 0;
+}
+
+.operation-item.success {
+    border-left-color: #28a745;
+    background-color: rgba(40, 167, 69, 0.1);
+}
+
+.operation-item.error {
+    border-left-color: #dc3545;
+    background-color: rgba(220, 53, 69, 0.1);
+}
+
+.operation-item.warning {
+    border-left-color: #ffc107;
+    background-color: rgba(255, 193, 7, 0.1);
+}
+
+.operation-item .success {
+    color: #28a745;
+    font-weight: bold;
+}
+
+.operation-item .error {
+    color: #dc3545;
+    font-weight: bold;
+}
+
+.operation-item .warning {
+    color: #ffc107;
+    font-weight: bold;
+}
+
+/* Recent Activity Table */
+.par2-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 0;
+    padding: 0;
+}
+
+.par2-table th,
+.par2-table td {
+    padding: 8px;
+    text-align: left;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.par2-table th {
+    /* Remove background-color to prevent overriding the thead background */
+    font-weight: bold;
+}
+
+.par2-table tr:hover {
+    background-color: var(--table-hover-bg);
+}
+
+/* File Tree */
+.folder-select {
+    display: flex;
+    align-items: flex-start;
+    gap: 2rem;
+    margin-bottom: 15px;
+}
+
+.folder-label {
+    padding-top: 5px;
+}
+
+.filetree-wrapper {
+    flex: 1;
+}
+
+.filetree-container {
+    display: block !important;
+    text-align: left;
+}
+
+.filetree-container textarea {
+    width: 100% !important;
+    text-align: left;
+}
+
+.ft {
+    position: static !important;
+    margin-top: 5px;
+    width: 100% !important;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* Dashboard Dialog Styles */
+.par2-dialog {
+    min-width: 35%;
+    max-width: 95vw; /* Allow dialog to scale with viewport width */
+    width: auto !important;
+}
+
+.par2-dialog .dialog-content {
+    padding: 20px;
+}
+
+.par2-dialog .form-group {
+    margin-bottom: 15px;
+}
+
+.par2-dialog .advanced-settings-input {
+    width: 60% !important;
+}
+
+/* Protect Dialog Styles */
+
+#protect-dialog .dialog-content {
+    width: 100%;
+    overflow: visible;
+    padding: 20px;
+}
+
+/* Selected Folders Section */
+.selected-folders-section {
+    margin-bottom: 20px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    padding: 10px;
+    max-width: 90vw;
+    width: 90%;
+}
+
+.selected-folders-section h4 {
+    margin-top: 0;
+    margin-bottom: 10px;
+}
+
+.selected-folders-list {
+    overflow-y: auto;
+    max-height: 350px;
+}
+
+#selected-folders-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+#selected-folders-table th,
+#selected-folders-table td {
+    padding: 8px;
+    text-align: left;
+    border-bottom: 1px solid #ddd;
+}
+
+#selected-folders-table th {
+    background-color: rgba(0, 0, 0, 0.1);
+}
+
+.empty-row td {
+    text-align: center;
+    padding: 15px;
+    color: #888;
+}
+
+/* Configuration Section */
+.configuration-section {
+    margin-bottom: 20px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    padding: 10px;
+    max-width: 90vw;
+    width: 90%;
+}
+
+.configuration-section h4 {
+    margin-top: 0;
+    margin-bottom: 10px;
+}
+
+.folder-selection-area,
+.settings-configuration {
+    margin-bottom: 15px;
+}
+
+.folder-selection-area h5,
+.settings-configuration h5 {
+    margin-top: 0;
+    margin-bottom: 10px;
+}
+
+/* Form Styling */
+.form-group {
+    margin-bottom: 15px;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: bold;
+}
+
+.checkbox-label {
+    font-weight: bold;
+    display: flex;
+    align-items: center;
+}
+
+.checkbox-label input {
+    margin-right: 5px;
+}
+
+.checkbox-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 5px;
+}
+
+.checkbox-group label {
+    display: flex;
+    align-items: center;
+    font-weight: normal;
+    margin-right: 15px;
+}
+
+/* Advanced Settings Panel */
+#advanced-settings-panel {
+    background-color: rgba(0, 0, 0, 0.05);
+    padding: 10px;
+    border-radius: 4px;
+    margin-bottom: 15px;
+}
+
+.warning-message {
+    color: #e74c3c;
+    font-size: 0.9em;
+    margin-top: 10px;
+}
+
+/* Help Icons */
+.help-icon {
+    margin-left: 5px;
+    color: #3498db;
+    cursor: help;
+}
+
+/* Buttons */
+.btn-primary, .btn-success, .btn-cancel {
+    padding: 8px 15px;
+    border-radius: 4px;
+    cursor: pointer;
+    border: none;
+}
+
+.btn-primary { background-color: #3498db; color: white; }
+.btn-success { background-color: #2ecc71; color: white; }
+.btn-cancel { background-color: #e74c3c; color: white; }
+
+.dialog-footer {
+    margin-top: 20px;
+    text-align: right;
+    width: 95%;
+}

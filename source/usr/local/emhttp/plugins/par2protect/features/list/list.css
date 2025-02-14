@@ -1,0 +1,266 @@
+/* Protected Files List Styles */
+
+.protected-files-list {
+    margin: 0;
+    padding: 0;
+}
+
+/* Action Bar */
+.action-bar {
+    margin-bottom: 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.action-bar .left-actions {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.action-bar .right-actions {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+.filter-dropdown {
+    padding: 4px 8px;
+    min-width: 120px;
+}
+
+/* Protected Files Table */
+.protected-files-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 0;
+    padding: 0;
+}
+
+.protected-files-table th {
+    padding: 8px;
+    text-align: left;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.protected-files-table td {
+    padding: 8px;
+    text-align: left;
+}
+
+.protected-files-table th {
+    background-color: var(--table-header-bg);
+    font-weight: bold;
+}
+
+.protected-files-table tr:hover {
+    background-color: var(--table-hover-bg);
+}
+
+/* Table Columns */
+.checkbox-column {
+    width: 40px;
+    text-align: center !important;
+}
+
+.status-column {
+    width: 120px;
+}
+
+.size-column {
+    width: 180px;
+}
+
+.date-column {
+    width: 160px;
+}
+
+.actions-column {
+    width: 100px;
+}
+
+.mode-column {
+    width: 100px;
+}
+
+.redundancy-column {
+    width: 100px;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .action-bar {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    
+    .action-bar .left-actions,
+    .action-bar .right-actions {
+        width: 100%;
+    }
+    
+    .filter-dropdown {
+        width: 100%;
+    }
+    
+    .protected-files-table {
+        display: block;
+        overflow-x: auto;
+        white-space: nowrap;
+    }
+}
+
+.select-item {
+    margin: 0px 0px 0px 12px;
+}
+
+/* Error Info Icon */
+.error-info-icon {
+    color: var(--danger);
+    margin-left: 5px;
+    cursor: pointer;
+    font-size: 14px;
+}
+
+.error-info-icon:hover {
+    opacity: 0.8;
+    transform: scale(1.1);
+}
+
+/* Status Cell */
+.status-cell {
+    position: relative;
+    align-items: center;
+}
+
+/* Status Indicators */
+.status-cell[data-status="ERROR"] span {
+    color: var(--danger);
+    font-weight: bold;
+}
+
+.status-cell[data-status="DAMAGED"] span,
+.status-cell[data-status="MISSING"] span {
+    color: var(--warning);
+    font-weight: bold;
+}
+
+.status-cell[data-status="VERIFIED"] span,
+.status-cell[data-status="PROTECTED"] span,
+.status-cell[data-status="REPAIRED"] span {
+    color: var(--success);
+    font-weight: bold;
+}
+
+/* File type styling */
+.file-type, .file-types {
+    display: inline-block;
+    background-color: #f0f0f0;
+    border-radius: 3px;
+    padding: 2px 5px;
+    margin-left: 5px;
+    font-size: 0.85em;
+    color: #666;
+}
+
+.file-types {
+    background-color: #e6f7ff;
+    color: #0066cc;
+}
+
+/* File type info icon */
+.file-type-info {
+    color: #0066cc;
+    margin-left: 5px;
+    cursor: pointer;
+    font-size: 14px;
+}
+
+.file-type-info:hover {
+    opacity: 0.8;
+    transform: scale(1.1);
+}
+
+/* Size info icon */
+.size-info-icon {
+    color: #0066cc;
+    margin-left: 5px;
+    cursor: pointer;
+    font-size: 14px;
+}
+
+.size-info-icon:hover {
+    opacity: 0.8;
+    transform: scale(1.1);
+}
+
+/* File list in popup */
+.file-list-container {
+    text-align: left;
+    width: 100%;
+}
+
+.file-list {
+    max-height: 300px;
+    overflow-y: auto;
+    overflow-x: auto;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    padding: 10px;
+    margin-top: 10px;
+}
+
+.file-list ul {
+    margin: 0;
+    padding: 0 0 0 20px;
+    list-style-type: disc;
+}
+
+.file-list li {
+    margin-bottom: 5px;
+}
+
+/* Wide SweetAlert customization */
+.sweet-alert.showSweetAlert.visible.wide-swal,
+.sweet-alert.wide-swal {
+    width: 50%;
+    max-width: 800px;
+    margin-left: -25%;
+    left: 50%;
+    transition: none;
+}
+
+/* Regular SweetAlert dialog styling */
+.sweet-alert.showSweetAlert.visible {
+    width: 478px;
+    max-width: 90%;
+    transition: none;
+}
+
+/* Error popup specific styling */
+.sweet-alert.error-popup {
+    width: 478px !important;
+    max-width: 90% !important;
+    transition: none !important;
+}
+
+.error-details-container {
+    max-height: 400px;
+    overflow-y: auto;
+    overflow-x: hidden; 
+    text-align: left;
+    width: 100%;
+}
+
+.error-details-container pre {
+    white-space: pre;
+    background-color: var(--pre-background); 
+    color: var(--text); 
+    width: 100%;
+    margin: 0;
+    padding: 10px;
+}

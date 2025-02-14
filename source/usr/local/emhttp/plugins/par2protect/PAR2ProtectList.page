@@ -1,0 +1,19 @@
+Menu="PAR2Protect:2"
+Title="Protected Files"
+Tag="list"
+---
+<link type="text/css" rel="stylesheet" href="/plugins/dynamix/styles/jquery.sweetalert.css">
+<link type="text/css" rel="stylesheet" href="/plugins/par2protect/shared/css/sweetalert-dark-fix.css">
+<link type="text/css" rel="stylesheet" href="/plugins/par2protect/shared/css/common.css">
+<link type="text/css" rel="stylesheet" href="/plugins/par2protect/features/list/list.css">
+<script src="/plugins/par2protect/shared/js/logger.js"></script>
+<script src="/plugins/par2protect/shared/js/common.js"></script>
+<script src="/plugins/par2protect/shared/js/queue-manager.js"></script>
+<script src="/plugins/par2protect/features/list/list.js"></script>
+<script src="/plugins/par2protect/features/list/reprotect.js"></script>
+
+<?php
+require_once("/usr/local/emhttp/plugins/par2protect/core/bootstrap.php");
+$listPage = new \Par2Protect\Features\List\ListPage();
+$listPage->render();
+?>

@@ -1,0 +1,268 @@
+/* Common Styles for PAR2Protect Plugin */
+
+:root {
+    --background: #f8f9fa;
+    --text: #212529;
+    --text-muted: #6c757d;
+    --border-color: #dee2e6;
+    --primary: #007bff;
+    --secondary: #6c757d;
+    --success: #28a745;
+    --danger: #dc3545;
+    --warning: #ffc107;
+    --info: #17a2b8;
+    --pre-background: #f5f5f5;
+}
+
+/* Dark mode support */
+.dark-theme {
+    --background: #2d2d2d;
+    --text: #f8f9fa;
+    --text-muted: #adb5bd;
+    --border-color: #495057;
+    --pre-background: #3d3d3d;
+}
+
+/* Error Message */
+.error-message {
+    background-color: #f8d7da;
+    color: #721c24;
+    padding: 10px 15px;
+    border-radius: 4px;
+    margin-bottom: 20px;
+    display: none;
+}
+
+/* Buttons */
+button {
+    background-color: var(--primary);
+    border: none;
+    padding: 8px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    margin-right: 5px;
+}
+
+button:hover {
+    opacity: 0.9;
+}
+
+button:disabled {
+    background-color: var(--secondary);
+    cursor: not-allowed;
+}
+
+/* Form Elements */
+.form-group {
+    margin-bottom: 15px;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: 500;
+}
+
+.form-group input[type="text"],
+.form-group input[type="number"],
+.form-group select {
+    width: 100%;
+    padding: 8px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background-color: var(--background);
+}
+
+.form-group input[type="range"] {
+    width: 55%;
+}
+
+.form-actions {
+    margin-top: 20px;
+    display: flex;
+    justify-content: flex-end;
+}
+
+/* Checkbox Group */
+.checkbox-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 5px;
+}
+
+.checkbox-group label {
+    display: flex;
+    align-items: center;
+    font-weight: normal;
+    margin-bottom: 0;
+}
+
+.checkbox-group input[type="checkbox"] {
+    margin-right: 5px;
+}
+
+/* Notices */
+.notice {
+    padding: 10px;
+    background-color: rgba(0,0,0,0.05);
+    border-radius: 4px;
+    text-align: center !important;
+    color: var(--text-muted);
+}
+
+/* Loading Indicator */
+.loading-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0,0,0,0.5);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 9999;
+}
+
+.loading-spinner {
+    border: 5px solid #f3f3f3;
+    border-top: 5px solid var(--primary);
+    border-radius: 50%;
+    width: 50px;
+    height: 50px;
+    animation: spin 2s linear infinite;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* Status Badges */
+.status-badge {
+    display: inline-block;
+    padding: 3px 6px;
+    border-radius: 3px;
+    font-size: 0.8em;
+    font-weight: 500;
+}
+
+.status-badge.success {
+    background-color: var(--success);
+    color: white;
+}
+
+.status-badge.error {
+    background-color: var(--danger);
+    color: white;
+}
+
+.status-badge.warning {
+    background-color: var(--warning);
+    color: black;
+}
+
+.status-badge.info {
+    background-color: var(--info);
+    color: white;
+}
+
+/* Tooltips */
+.info-tooltip {
+    cursor: help;
+    color: var(--info);
+}
+
+/* Error Info Icon */
+.error-info-icon {
+    color: var(--danger);
+    margin-left: 5px;
+    cursor: pointer;
+    font-size: 14px;
+}
+
+.error-info-icon:hover {
+    opacity: 0.8;
+}
+
+/* Status Cell */
+.status-cell {
+    position: relative;
+}
+
+/* Status colors */
+.status-cell[data-status="METADATA_ISSUES"] span {
+    color: var(--warning);
+    font-weight: bold;
+}
+
+/* Error Details Container */
+.error-details-container {
+    max-height: 400px;
+    overflow-y: auto;
+    text-align: left;
+}
+
+.error-details-container pre {
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-size: 12px;
+    line-height: 1.4;
+    padding: 10px;
+    background-color: var(--pre-background);
+    border-radius: 4px;
+    color: var(--text);
+}
+
+/* SweetAlert Fixes */
+.sweet-overlay {
+    z-index: 10000 !important; /* Ensure overlay is above other elements */
+}
+
+.sweet-alert {
+    z-index: 10001 !important; /* Ensure alert is above overlay */
+}
+
+/* Redundancy Options Dialog */
+.redundancy-options-dialog {
+    width: 500px !important;
+    margin-left: -250px !important;
+}
+
+.redundancy-options {
+    text-align: left;
+    margin-top: 20px;
+}
+
+.redundancy-options .option {
+    margin-bottom: 15px;
+}
+
+.redundancy-options label {
+    margin-left: 5px;
+    font-weight: normal;
+}
+
+.redundancy-options select {
+    margin-left: 10px;
+    width: 80px;
+}
+
+/* Fix for SweetAlert cleanup issues */
+body.swal2-shown {
+    overflow-y: visible !important; /* Prevent body from being locked */
+}
+
+/* Ensure protected files list is clickable */
+.protected-files-list {
+    position: relative;
+    z-index: 1; /* Lower than SweetAlert but still positioned */
+}
+
+/* Ensure table remains interactive */
+.protected-files-table {
+    position: relative;
+    z-index: 1;
+}

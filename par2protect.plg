@@ -1,0 +1,121 @@
+<?xml version="1.0" standalone="yes"?>
+<!DOCTYPE PLUGIN [
+<!ENTITY name "par2protect">
+<!ENTITY author "Joly0">
+<!ENTITY version "2025.03.21">
+<!ENTITY launch  "Settings/PAR2Protect">
+<!ENTITY gitURL "https://raw.githubusercontent.com/Joly0/&name;/main">
+<!ENTITY pluginURL "&gitURL;/&name;.plg">
+<!ENTITY plgPATH "/boot/config/plugins/&name;">
+<!ENTITY plgNAME "&name;-&version;-x86_64">
+<!ENTITY emhttp "/usr/local/emhttp/plugins/&name;">
+<!ENTITY par2VER "v1.2.0">
+<!ENTITY par2URL "https://github.com/animetosho/par2cmdline-turbo/releases/download/&par2VER;/par2cmdline-turbo-&par2VER;-linux-amd64.xz">
+<!ENTITY par2BIN "par2cmdline-turbo-&par2VER;-linux-amd64">
+]>
+<PLUGIN name="&name;" author="&author;" version="&version;" launch="&launch;" pluginURL="&pluginURL;" support="https://forums.unraid.net/topic/YOURTHREAD" min="7.0.0">
+
+    <CHANGES>
+        ###2025.03.16
+        - Initial Release
+    </CHANGES>
+    
+    
+    <FILE Name="&emhttp;/README.md">
+        <INLINE>
+            **PAR2Protect**
+            
+Plugin to automatically create and verify PAR2 files for data protection on your Unraid server.
+        </INLINE>
+    </FILE>
+    
+    <FILE Name="&plgPATH;/&plgNAME;.txz" Run="upgradepkg --install-new">
+        <URL>&gitURL;/packages/&plgNAME;.txz</URL>
+    </FILE>
+    
+    <FILE Run="/bin/bash">
+        <INLINE>
+            # Install par2cmdline-turbo if not present
+            BIN_PATH="/usr/local/bin/par2"
+            DOWNLOAD_PATH="/boot/config/plugins/&name;/par2cmdline-turbo.xz"
+            EXTRACTED_PATH="/boot/config/plugins/&name;/par2cmdline-turbo"
+            if [ ! -f "$BIN_PATH" ]; then
+                echo "Downloading par2cmdline-turbo..."
+                wget -O "$DOWNLOAD_PATH" "&par2URL;"
+                xz -d "$DOWNLOAD_PATH"
+                if [ -f "$EXTRACTED_PATH" ]; then
+                    mv "$EXTRACTED_PATH" "$BIN_PATH"
+                    chmod +x "$BIN_PATH"
+                    echo "par2cmdline-turbo installed successfully"
+                else
+                    echo "Error: Extraction failed, file not found: $EXTRACTED_PATH"
+                    exit 1
+                fi
+            fi
+        </INLINE>
+    </FILE>
+    
+    <FILE Run="/bin/bash">
+        <INLINE>
+            echo "+=============================================================================="
+            echo "| Installing &name; &version;"
+            echo "| Setting up configuration..."
+            # Create required directories
+            mkdir -p "&plgPATH;"
+            mkdir -p "&plgPATH;/schedule/"
+            
+            # Creating database only if it doesn't exist
+            if [ ! -f "&plgPATH;/par2protect.db" ]; then
+                echo "| Creating database..."
+                php /usr/local/emhttp/plugins/par2protect/scripts/init_db.php
+            fi
+            
+            # Setup PAR2Protect Dashboard location only if menu config doesn't exist
+            if [ ! -f "&plgPATH;/menu.cfg" ]; then
+                echo "| Setting up dashboard location..."
+                php /usr/local/emhttp/plugins/par2protect/scripts/update_menu_placement.php
+            fi
+            
+            # Create temp directories if they dont exist
+            if [ ! -d "/tmp/par2protect" ]; then
+                echo "| Setting up temp directories..."
+                php /usr/local/emhttp/plugins/par2protect/scripts/init_tmp_dirs.php
+            fi
+            
+            # Setup events cleanup cron job
+            echo "| Setting up events cleanup cron job..."
+            php /usr/local/emhttp/plugins/par2protect/scripts/setup_events_cleanup_cron.php
+            
+            # Setup log backup cron job
+            echo "| Setting up log backup cron job..."
+            php /usr/local/emhttp/plugins/par2protect/scripts/setup_log_backup_cron.php
+            
+            echo "| Installation complete"
+            echo "+=============================================================================="
+        </INLINE>
+    </FILE>
+    
+    <FILE Run="/bin/bash">
+        <INLINE>
+            # Cleanup old versions
+            rm -f $(ls &plgPATH;/&name;.txz 2>/dev/null | grep -v '&version;')
+        </INLINE>
+    </FILE>
+    
+    <FILE Run="/bin/bash" Method="remove">
+        <INLINE>
+            echo "Removing &name;..."
+            # Remove packages
+            removepkg &plgPATH;/.txz
+            # Remove par2cmdline-turbo
+            rm -f /usr/local/bin/par2
+            # Remove plugin files
+            rm -rf &emhttp;
+            # Remove temp files
+            rm -rf /tmp/par2protect
+            # Remove plugin settings
+            rm -rf &plgPATH;
+            echo "&name; has been removed"
+        </INLINE>
+    </FILE>
+</PLUGIN>

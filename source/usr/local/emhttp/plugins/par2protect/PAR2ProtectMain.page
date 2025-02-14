@@ -1,0 +1,9 @@
+Menu="PAR2Protect:1"
+Title="Dashboard"
+Tag="dashboard"
+---
+<?php
+require_once("/usr/local/emhttp/plugins/par2protect/core/bootstrap.php");
+$dashboardPage = new \Par2Protect\Features\Dashboard\DashboardPage();
+$dashboardPage->render();
+?>
