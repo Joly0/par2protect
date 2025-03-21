@@ -916,7 +916,7 @@
                                                 type: 'info'
                                             });
                                             
-                                            addNotice(message);
+                                            // addNotice(message);
                                             // No need to start status updates since we're using SSE now
                                             P.setLoading(false);
                                         }
@@ -937,7 +937,7 @@
                                                 type: 'info'
                                             });
                                             
-                                            addNotice(message);
+                                            // addNotice(message);
                                             // No need to start status updates since we're using SSE now
                                             P.setLoading(false);
                                         }

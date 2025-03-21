@@ -663,13 +663,21 @@ try {
                             
                             // Get details of items with issues (damaged, missing, error)
                             $problemItems = [];
-                            $result = $queueDb->query("
-                                SELECT path, last_status FROM protected_items
-                                WHERE last_status IN ('DAMAGED', 'MISSING', 'ERROR', 'REPAIR_FAILED')
-                                AND last_verified >= :recent_time
-                            ", [':recent_time' => date('Y-m-d H:i:s', $recentTime)]);
-                            
-                            $problemOps = $queueDb->fetchAll($result);
+                            try {
+                                // Use main database connection ($db) instead of queue database ($queueDb)
+                                // since protected_items table exists in the main database
+                                $result = $db->query("
+                                    SELECT path, last_status FROM protected_items
+                                    WHERE last_status IN ('DAMAGED', 'MISSING', 'ERROR', 'REPAIR_FAILED')
+                                    AND last_verified >= :recent_time
+                                ", [':recent_time' => date('Y-m-d H:i:s', $recentTime)]);
+                                
+                                $problemOps = $db->fetchAll($result);
+                            } catch (\Exception $e) {
+                                // Log the error but continue processing
+                                log_message("Error querying problem items: " . $e->getMessage(), 'WARNING');
+                                $problemOps = [];
+                            }
                             foreach ($problemOps as $op) {
                                 $problemItems[] = [
                                     'path' => $op['path'],

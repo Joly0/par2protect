@@ -309,7 +309,7 @@
                                                     });
                                                 } else {
                                                     // Some operations failed
-                                                    addNotice(operationsAdded + ' re-protection tasks added to queue, ' + operationsFailed + ' failed');
+                                                    // addNotice(operationsAdded + ' re-protection tasks added to queue, ' + operationsFailed + ' failed');
                                                     
                                                     swal({
                                                         title: 'Re-protection Partially Started',
@@ -341,7 +341,7 @@
                                                     swal('Error', 'Failed to add re-protection tasks to queue', 'error');
                                                 } else {
                                                     // Some operations failed
-                                                    addNotice(operationsAdded + ' re-protection tasks added to queue, ' + operationsFailed + ' failed');
+                                                    // addNotice(operationsAdded + ' re-protection tasks added to queue, ' + operationsFailed + ' failed');
                                                     
                                                     swal({
                                                         title: 'Re-protection Partially Started',
@@ -1305,14 +1305,16 @@
                                 }
                             });
         },
-        
         // Setup operation completion listeners
         setupOperationListeners: function() {
             // Listen for operation completion events
             P.events.on('operation.completed', function(data) {
                 
+                // Get the operation type from either operation_type (from server) or type (from client)
+                const operationType = data.operation_type || data.type;
+                
                 // Refresh the list when relevant operations complete
-                if (P.protectedListOperations.includes(data.type)) {
+                if (P.protectedListOperations.includes(operationType)) {
                     
                     // Refresh immediately first
                     list.refreshProtectedList(true);
@@ -1329,7 +1331,7 @@
                         let details = data.result ? data.result.details : null;
                         let operationStatus = data.result ? data.result.status : null;
                         
-                        switch (data.type) {
+                        switch (operationType) {
                             case 'protect':
                                 message = data.status === 'completed'
                                     ? 'Protection operation completed successfully'
@@ -1353,7 +1355,7 @@
                         }
                         
                         if (message) {
-                            addNotice(message, type);
+                            // addNotice(message, type);
                         }
                         
                         // Show detailed error popup for failed operations
@@ -1363,7 +1365,7 @@
                              operationStatus === 'MISSING' ||
                              operationStatus === 'DAMAGED') &&
                             details) {
-                            list.showErrorDetailsPopup(data.type, details);
+                            list.showErrorDetailsPopup(operationType, details);
                         }
                         
                         // Schedule another refresh after a delay to ensure all database changes are reflected

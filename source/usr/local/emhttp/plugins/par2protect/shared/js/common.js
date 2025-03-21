@@ -191,7 +191,7 @@ window.Par2Protect = window.Par2Protect || {};
         // Trigger the operation completed event
         P.events.trigger('operation.completed', {
             id: operationId,
-            type: operationType,
+            operation_type: operationType,
             status: status,
             result: result
         });
