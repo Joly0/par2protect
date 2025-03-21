@@ -186,13 +186,17 @@ Resource Management
       $totalThreads = intval(trim(shell_exec('nproc')));
       if ($totalThreads <= 0) $totalThreads = 4; // Fallback if nproc fails
       
-      // Current setting (default to max threads)
-      $currentCpu = $settings['resource_limits']['max_cpu_usage'] ?? $totalThreads;
+      // Current setting (default to par2 default)
+      $currentCpu = $settings['resource_limits']['max_cpu_usage'] ?? '';
       
+      // Add par2 default option
+      ?>
+      <option value="" <?=$currentCpu===''?'selected':''?>>par2 default</option>
+      <?php
       // Generate options for all available threads
       for($i=1; $i<=$totalThreads; $i++):
       ?>
-      <option value="<?=$i?>" <?=$currentCpu==$i?'selected':''?>><?=$i?></option>
+      <option value="<?=$i?>" <?=$currentCpu===$i?'selected':''?>><?=$i?></option>
       <?php endfor; ?>
     </select>
   </dd>
@@ -201,20 +205,22 @@ Resource Management
 <blockquote class="inline_help">
   Sets the number of CPU threads used for par2 operations (-t parameter).<br>
   Lower values reduce system impact but increase operation time.<br>
-  <strong>Recommended:</strong> Use maximum available threads for best performance.
+  <strong>par2 default:</strong> Let par2 determine the optimal thread count.<br>
+  <strong>Recommended:</strong> Use "par2 default" or maximum available threads for best performance.
 </blockquote>
 
 <dl>
   <dt style="cursor: help">Maximum Memory Usage (MB):</dt>
   <dd>
-    <input type="number" name="max_memory" min="0" value="<?=$settings['resource_limits']['max_memory_usage'] ?? 80?>" placeholder="Leave empty for unlimited">
+    <input type="number" name="max_memory" min="0" value="<?=$settings['resource_limits']['max_memory_usage'] ?? ''?>" placeholder="Leave empty for par2 default">
   </dd>
 </dl>
 
 <blockquote class="inline_help">
-  Limits how much memory the plugin can use during operations.<br>
+  Limits how much memory the plugin can use during operations (-m parameter).<br>
   This helps prevent the plugin from using too much system memory.<br>
-  <strong>Recommended:</strong> 80MB for most systems. Increase for large file operations.
+  <strong>Empty:</strong> Let par2 determine the optimal memory usage.<br>
+  <strong>Recommended:</strong> Leave empty for most systems. Set a specific value only if you need to limit memory usage.
 </blockquote>
 
 <dl>
@@ -353,6 +359,53 @@ Notification & Logging Settings
   When enabled, additional detailed logs are generated for troubleshooting.<br>
   This is useful when diagnosing problems but can generate large log files.<br>
   <strong>Recommendation:</strong> Keep disabled unless you're troubleshooting an issue.
+</blockquote>
+
+<dl>
+  <dt style="cursor: help">Log Backup Interval:</dt>
+  <dd>
+    <select name="log_backup_interval">
+      <?php
+      $backupInterval = $settings['logging']['backup_interval'] ?? 'daily';
+      $intervalOptions = [
+          'hourly' => 'Hourly',
+          'daily' => 'Daily',
+          'weekly' => 'Weekly',
+          'never' => 'Never'
+      ];
+      foreach($intervalOptions as $value => $label):
+      ?>
+      <option value="<?=$value?>" <?=$backupInterval==$value?'selected':''?>><?=$label?></option>
+      <?php endforeach; ?>
+    </select>
+  </dd>
+</dl>
+
+<blockquote class="inline_help">
+  Controls how often logs are backed up from temporary storage to persistent storage.<br>
+  <strong>Hourly:</strong> Backup logs every hour (minimal data loss risk, higher system activity).<br>
+  <strong>Daily:</strong> Backup logs once per day (recommended for most users).<br>
+  <strong>Weekly:</strong> Backup logs once per week (minimal system impact, higher risk of data loss).<br>
+  <strong>Never:</strong> Never backup logs (logs will be lost on system restart).
+</blockquote>
+
+<dl>
+  <dt style="cursor: help">Log Retention (Days):</dt>
+  <dd>
+    <select name="log_retention_days">
+      <?php
+      $retentionDays = $settings['logging']['retention_days'] ?? 7;
+      for($i=1; $i<=30; $i++):
+      ?>
+      <option value="<?=$i?>" <?=$retentionDays==$i?'selected':''?>><?=$i?></option>
+      <?php endfor; ?>
+    </select>
+  </dd>
+</dl>
+
+<blockquote class="inline_help">
+  How many days to keep logs before they are automatically deleted.<br>
+  <strong>Recommended:</strong> 7 days for most users. Increase for more history or decrease to save disk space.
 </blockquote>
 
 <dl>

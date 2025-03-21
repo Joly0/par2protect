@@ -2,7 +2,7 @@
 <!DOCTYPE PLUGIN [
 <!ENTITY name "par2protect">
 <!ENTITY author "Joly0">
-<!ENTITY version "2025.03.21">
+<!ENTITY version "2025.03.21b">
 <!ENTITY launch  "Settings/PAR2Protect">
 <!ENTITY gitURL "https://raw.githubusercontent.com/Joly0/&name;/main">
 <!ENTITY pluginURL "&gitURL;/&name;.plg">
@@ -10,14 +10,21 @@
 <!ENTITY plgNAME "&name;-&version;-x86_64">
 <!ENTITY emhttp "/usr/local/emhttp/plugins/&name;">
 <!ENTITY par2VER "v1.2.0">
-<!ENTITY par2URL "https://github.com/animetosho/par2cmdline-turbo/releases/download/&par2VER;/par2cmdline-turbo-&par2VER;-linux-amd64.xz">
-<!ENTITY par2BIN "par2cmdline-turbo-&par2VER;-linux-amd64">
+<!ENTITY par2NAME "par2cmdline-turbo-&par2VER;-x86_64">
 ]>
 <PLUGIN name="&name;" author="&author;" version="&version;" launch="&launch;" pluginURL="&pluginURL;" support="https://forums.unraid.net/topic/YOURTHREAD" min="7.0.0">
 
     <CHANGES>
-        ###2025.03.16
-        - Initial Release
+###2025.03.21b
+- Included missing settings changes
+
+###2025.03.21a
+- Include par2cmdline-turbo in the plugin package
+- Use latest par2cmdline-turbo version from GitHub
+- Improved cleanup of old package files
+        
+###2025.03.21
+- Initial Release
     </CHANGES>
     
     
@@ -33,26 +40,8 @@ Plugin to automatically create and verify PAR2 files for data protection on your
         <URL>&gitURL;/packages/&plgNAME;.txz</URL>
     </FILE>
     
-    <FILE Run="/bin/bash">
-        <INLINE>
-            # Install par2cmdline-turbo if not present
-            BIN_PATH="/usr/local/bin/par2"
-            DOWNLOAD_PATH="/boot/config/plugins/&name;/par2cmdline-turbo.xz"
-            EXTRACTED_PATH="/boot/config/plugins/&name;/par2cmdline-turbo"
-            if [ ! -f "$BIN_PATH" ]; then
-                echo "Downloading par2cmdline-turbo..."
-                wget -O "$DOWNLOAD_PATH" "&par2URL;"
-                xz -d "$DOWNLOAD_PATH"
-                if [ -f "$EXTRACTED_PATH" ]; then
-                    mv "$EXTRACTED_PATH" "$BIN_PATH"
-                    chmod +x "$BIN_PATH"
-                    echo "par2cmdline-turbo installed successfully"
-                else
-                    echo "Error: Extraction failed, file not found: $EXTRACTED_PATH"
-                    exit 1
-                fi
-            fi
-        </INLINE>
+    <FILE Name="&plgPATH;/&par2NAME;.txz" Run="upgradepkg --install-new">
+        <URL>&gitURL;/packages/&par2NAME;.txz</URL>
     </FILE>
     
     <FILE Run="/bin/bash">
@@ -98,7 +87,9 @@ Plugin to automatically create and verify PAR2 files for data protection on your
     <FILE Run="/bin/bash">
         <INLINE>
             # Cleanup old versions
-            rm -f $(ls &plgPATH;/&name;.txz 2>/dev/null | grep -v '&version;')
+            echo "| Cleaning up old package files..."
+            find "&plgPATH;" -name "&name;-*.txz" ! -name "&plgNAME;.txz" -delete
+            find "&plgPATH;" -name "par2cmdline-turbo-*.txz" ! -name "&par2NAME;.txz" -delete
         </INLINE>
     </FILE>
     
@@ -107,12 +98,17 @@ Plugin to automatically create and verify PAR2 files for data protection on your
             echo "Removing &name;..."
             # Remove packages
             removepkg &plgPATH;/.txz
+            removepkg &plgPATH;/par2cmdline-turbo*.txz
+            
             # Remove par2cmdline-turbo
             rm -f /usr/local/bin/par2
+            
             # Remove plugin files
             rm -rf &emhttp;
+            
             # Remove temp files
             rm -rf /tmp/par2protect
+            
             # Remove plugin settings
             rm -rf &plgPATH;
             echo "&name; has been removed"

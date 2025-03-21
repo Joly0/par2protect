@@ -104,6 +104,8 @@ class SettingsPage {
             'notifications_enabled' => 'notifications.enabled',
             'debug_logging' => 'debug.debug_logging',
             'error_log_mode' => 'logging.error_log_mode',
+            'log_backup_interval' => 'logging.backup_interval',
+            'log_retention_days' => 'logging.retention_days',
             'custom_extensions' => 'file_types.custom_extensions',
             'default_extensions' => 'file_types.default_extensions'
         ];
@@ -154,6 +156,7 @@ class SettingsPage {
             'database.busy_timeout',
             'logging.max_size',
             'logging.max_files',
+            'logging.retention_days',
             'queue.max_execution_time',
             'verification.interval'
         ];

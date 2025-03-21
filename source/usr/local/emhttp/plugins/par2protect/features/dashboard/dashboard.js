@@ -27,7 +27,7 @@
                 const hasProtectedPaths = $('#protectedPaths-list .path-item').length > 0;
                 
                 // Log for debugging
-                console.log('Adjusting height for state:', state, 'itemCount:', itemCount, 'advancedVisible:', advancedVisible, 'hasProtectedPaths:', hasProtectedPaths);
+                // console.log('Adjusting height for state:', state, 'itemCount:', itemCount, 'advancedVisible:', advancedVisible, 'hasProtectedPaths:', hasProtectedPaths);
                 
                 switch(state) {
                     case 'normal':

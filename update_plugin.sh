@@ -23,9 +23,6 @@ echo "New version: $NEW_VERSION"
 # Step 3: Update the .plg file
 echo "Updating .plg file with version $NEW_VERSION..."
 if [ -f "$PLG_FILE" ]; then
-    # Create a backup of the original plg file
-    cp "$PLG_FILE" "$PLG_FILE.bak"
-    
     # Update the version in the plg file - fixed sed command
     sed -i "s/<!ENTITY version \"[0-9]\{4\}\.[0-9]\{2\}\.[0-9]\{2\}[a-z]\?\">/<!ENTITY version \"$NEW_VERSION\">/g" "$PLG_FILE"
     

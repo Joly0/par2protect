@@ -73,7 +73,13 @@ class Logger {
         
         // If backup interval is 'never', don't schedule backup
         if ($backupInterval === 'never') {
-            @mkdir($logDir, 0755, true);
+            return;
+        }
+        
+        // Ensure backup directory exists
+        $backupDir = dirname($this->backupPath);
+        if (!is_dir($backupDir)) {
+            @mkdir($backupDir, 0755, true);
         }
     }
     
@@ -359,13 +365,9 @@ class Logger {
             
             // Write to log file
             try {
-                // Write to temporary log file
+                // Write only to temporary log file
                 if (file_put_contents($this->tmpLogFile, $logLine . PHP_EOL, FILE_APPEND) === false) {
                     error_log("Failed to write to temporary log file: {$this->tmpLogFile}");
-                }
-                // Also write to permanent log file
-                if (file_put_contents($this->logFile, $logLine . PHP_EOL, FILE_APPEND) === false) {
-                    error_log("Failed to write to permanent log file: {$this->logFile}");
                 }
             } catch (\Exception $e) {
                 error_log("Failed to write to log file: " . $e->getMessage());

@@ -124,7 +124,7 @@ function initializeFileTreePicker(inputId, rootPath, foldersOnly) {
             // If the tree is not yet initialized, initialize it
             if ($treeContainer.children().length === 0) {
                 const $fileTree = $('<div class="fileTree"></div>').appendTo($treeContainer);
-                console.log('Initializing file tree with root:', rootPath);
+                // console.log('Initializing file tree with root:', rootPath);
                 // Initialize the file tree
                 $fileTree.fileTree({
                     // Enable multiSelect to use the built-in checkbox functionality
@@ -191,7 +191,7 @@ function initializeFileTreePicker(inputId, rootPath, foldersOnly) {
         // Only process directory checkboxes
         if (!$li.hasClass('directory')) return;
         
-        console.log('Checkbox clicked:', $checkbox.is(':checked'), $li.find('> a').attr('rel'));
+        // console.log('Checkbox clicked:', $checkbox.is(':checked'), $li.find('> a').attr('rel'));
         if ($checkbox.is(':checked')) {
             // Disable and uncheck checkboxes in child directories
             const $childCheckboxes = $li.find('ul li input[type="checkbox"]');
@@ -244,7 +244,7 @@ function initializeFileTreePicker(inputId, rootPath, foldersOnly) {
 
 // Function to process the file tree - handle checkbox behavior
 function processFileTree($fileTree, foldersOnly) {
-    console.log('Processing file tree, foldersOnly:', foldersOnly);
+    // console.log('Processing file tree, foldersOnly:', foldersOnly);
     
     // Use a slightly longer timeout to ensure the DOM is ready
     setTimeout(function() {
@@ -260,11 +260,11 @@ function processFileTree($fileTree, foldersOnly) {
             const path = $li.find('> a').attr('rel');
             
             if ($checkbox.length > 0 && $checkbox.is(':checked')) {
-                console.log('Found checked directory checkbox for:', path);
+                // console.log('Found checked directory checkbox for:', path);
                 // Disable all child checkboxes
                 const $childCheckboxes = $li.find('ul li input[type="checkbox"]');
                 if ($childCheckboxes.length > 0) {
-                    console.log('Disabling', $childCheckboxes.length, 'child checkboxes for', path);
+                    // console.log('Disabling', $childCheckboxes.length, 'child checkboxes for', path);
                     $childCheckboxes.prop('checked', false);
                     $childCheckboxes.prop('disabled', true);
                 }
@@ -285,7 +285,7 @@ function processFileTree($fileTree, foldersOnly) {
             if (!$checkbox.is(':checked')) {
                 // The class indicates it should be checked, but it's not
                 // This is an inconsistent state, so let's fix it
-                console.log('Found inconsistent state: parent-checked class but checkbox not checked');
+                // console.log('Found inconsistent state: parent-checked class but checkbox not checked');
                 $checkbox.prop('checked', true);
                 
                 // Disable all child checkboxes
@@ -393,12 +393,12 @@ $(document).ready(function() {
         // We can tell by checking if it has the 'expanded' class after a short delay
         setTimeout(function() {
             if ($li.hasClass('expanded')) {
-                console.log('Folder clicked and expanded:', $a.attr('rel'));
+                // console.log('Folder clicked and expanded:', $a.attr('rel'));
                 
                 // Check if parent checkbox is checked
                 const $checkbox = $li.find('> input[type="checkbox"]');
                 if ($checkbox.length > 0 && $checkbox.is(':checked')) {
-                    console.log('Parent checkbox is checked, disabling child checkboxes');
+                    // console.log('Parent checkbox is checked, disabling child checkboxes');
                     
                     // Disable all child checkboxes
                     const $childCheckboxes = $li.find('ul li input[type="checkbox"]');
@@ -432,21 +432,21 @@ $(document).ready(function() {
     // Handle folder expansion to hide files in folders-only mode
     // Listen for both expand and expanded events to catch all cases
     $(document).on('filetreeexpand filetreeexpanded', function(e, data) {
-        console.log('Filetree event triggered:', e.type, data);
+        // console.log('Filetree event triggered:', e.type, data);
         
         // Only proceed if we have valid data
         if (!data || !data.li) {
-            console.log('Invalid data for filetree event');
+            // console.log('Invalid data for filetree event');
             return;
         }
         
         // Check if we're in folders-only mode
         const $treeContainer = $(data.li).closest('.filetree-picker-container');
         if (!$treeContainer.length) {
-            console.log('Could not find filetree-picker-container, trying alternate selectors');
+            // console.log('Could not find filetree-picker-container, trying alternate selectors');
             // Try other possible container selectors
             const $altContainer = $(data.li).closest('.fileTree').parent();
-            console.log('Alternative container found:', $altContainer.length > 0);
+            // console.log('Alternative container found:', $altContainer.length > 0);
         }
         
         const foldersOnly = $treeContainer.hasClass('folders-only-mode');
@@ -463,14 +463,14 @@ $(document).ready(function() {
         // Get the expanded li element
         const $expandedLi = $(data.li);
         
-        console.log('Folder expanded:', $expandedLi.find('> a').attr('rel'));
-        console.log('Has parent-checked class:', $expandedLi.hasClass('parent-checked'));
-        console.log('Parent checkbox checked:', $expandedLi.find('> input[type="checkbox"]').is(':checked'));
+        // console.log('Folder expanded:', $expandedLi.find('> a').attr('rel'));
+        // console.log('Has parent-checked class:', $expandedLi.hasClass('parent-checked'));
+        // console.log('Parent checkbox checked:', $expandedLi.find('> input[type="checkbox"]').is(':checked'));
         
         // CRITICAL FIX: Directly check if the checkbox is checked
         const $checkbox = $expandedLi.find('> input[type="checkbox"]');
         if ($checkbox.length > 0 && $checkbox.is(':checked')) {
-            console.log('IMPORTANT: Parent checkbox is checked, disabling all child checkboxes');
+            // console.log('IMPORTANT: Parent checkbox is checked, disabling all child checkboxes');
             
             // Immediately disable all checkboxes in the expanded folder
             const $allChildCheckboxes = $expandedLi.find('ul li input[type="checkbox"]');
@@ -501,7 +501,7 @@ $(document).ready(function() {
         if ($parentCheckbox.length > 0 && $parentCheckbox.is(':checked')) {
             // If parent is checked, disable all child checkboxes recursively
             disableChildCheckboxes($expandedLi);
-            console.log('Disabled child checkboxes for checked parent');
+            // console.log('Disabled child checkboxes for checked parent');
         }
         
         // Also check all parent folders to see if any of them are checked
@@ -514,7 +514,7 @@ $(document).ready(function() {
                 const $allChildCheckboxes = $expandedLi.find('input[type="checkbox"]');
                 $allChildCheckboxes.prop('checked', false);
                 $allChildCheckboxes.prop('disabled', true);
-                console.log('Disabled checkboxes because a parent folder is checked');
+                // console.log('Disabled checkboxes because a parent folder is checked');
                 break;
             }
             $parent = $parent.parent().closest('li.directory');
@@ -526,7 +526,7 @@ $(document).ready(function() {
         // Use a slightly longer timeout to ensure the DOM is fully updated
         setTimeout(function() {
             processFileTree($fileTree, foldersOnly);
-            console.log('Processed checkboxes after folder expansion');
+            // console.log('Processed checkboxes after folder expansion');
         }, 50);
     });
     
@@ -538,7 +538,7 @@ $(document).ready(function() {
         
         // Find the li element
         const $li = $(data.li);
-        console.log('filetreechecked event for:', $li.find('> a').attr('rel'));
+        // console.log('filetreechecked event for:', $li.find('> a').attr('rel'));
         
         // CRITICAL FIX: Directly disable all child checkboxes
         // This is the most reliable way to ensure they're disabled
@@ -549,7 +549,7 @@ $(document).ready(function() {
         // Force a reflow to ensure the changes take effect
         void $li[0].offsetHeight;
         
-        console.log('IMPORTANT: Directly disabled all child checkboxes in filetreechecked event');
+        // console.log('IMPORTANT: Directly disabled all child checkboxes in filetreechecked event');
     });
     // Add a global function to refresh the file tree checkboxes
     window.refreshFileTreeCheckboxes = function() {
@@ -568,10 +568,10 @@ $(document).ready(function() {
                 $childCheckboxes.prop('checked', false);
                 $childCheckboxes.prop('disabled', true);
                 
-                console.log('Disabled child checkboxes for checked parent in refresh function');
+                // console.log('Disabled child checkboxes for checked parent in refresh function');
             });
         });
-        console.log('Refreshed all file tree checkboxes');
+        // console.log('Refreshed all file tree checkboxes');
     };
     
     // Add a global function to uncheck all checkboxes in the file tree
@@ -593,7 +593,7 @@ $(document).ready(function() {
                 $childCheckboxes.prop('disabled', false);
             });
         });
-        console.log('Unchecked all file tree checkboxes');
+        // console.log('Unchecked all file tree checkboxes');
     };
     
     // Call refresh after a short delay to ensure everything is loaded
@@ -606,14 +606,14 @@ $(document).ready(function() {
     // CRITICAL FIX: Override the jQuery FileTree plugin's expand function
     // This ensures we catch folder expansions directly at the source
     if ($.fn.fileTree && $.fn.fileTree.defaults) {
-        console.log('Attempting to override jQuery FileTree plugin behavior');
+        // console.log('Attempting to override jQuery FileTree plugin behavior');
         
         // Store the original function
         const originalFileTreeFn = $.fn.fileTree;
         
         // Override the function
         $.fn.fileTree = function(options, file_callback, folder_callback) {
-            console.log('FileTree plugin called with options:', options);
+            // console.log('FileTree plugin called with options:', options);
             
             // Call the original function
             const result = originalFileTreeFn.call(this, options, file_callback, folder_callback);
@@ -623,17 +623,17 @@ $(document).ready(function() {
                 const $a = $(this);
                 const $li = $a.parent();
                 
-                console.log('Direct folder click in overridden plugin:', $a.attr('rel'));
+                // console.log('Direct folder click in overridden plugin:', $a.attr('rel'));
                 
                 // Use a timeout to allow the folder to expand first
                 setTimeout(function() {
                     if ($li.hasClass('expanded')) {
-                        console.log('Folder expanded in overridden plugin:', $a.attr('rel'));
+                        // console.log('Folder expanded in overridden plugin:', $a.attr('rel'));
                         
                         // Check if the checkbox is checked
                         const $checkbox = $li.find('> input[type="checkbox"]');
                         if ($checkbox.length > 0 && $checkbox.is(':checked')) {
-                            console.log('Checkbox is checked, disabling child checkboxes in overridden plugin');
+                            // console.log('Checkbox is checked, disabling child checkboxes in overridden plugin');
                             
                             // Disable all child checkboxes
                             const $childCheckboxes = $li.find('ul li input[type="checkbox"]');
@@ -650,7 +650,7 @@ $(document).ready(function() {
         // Copy over any properties from the original function
         $.extend($.fn.fileTree, originalFileTreeFn);
     } else {
-        console.log('jQuery FileTree plugin not found or does not have defaults property');
+        // console.log('jQuery FileTree plugin not found or does not have defaults property');
     }
     
     // CRITICAL FIX: Add a direct event handler for checkbox clicks
@@ -661,7 +661,7 @@ $(document).ready(function() {
         
         // Only process if this is a directory checkbox that was just checked
         if ($li.hasClass('directory') && $checkbox.is(':checked')) {
-            console.log('Direct checkbox click handler: disabling child checkboxes');
+            // console.log('Direct checkbox click handler: disabling child checkboxes');
             
             // Disable all child checkboxes
             const $childCheckboxes = $li.find('ul li input[type="checkbox"]');
@@ -680,17 +680,17 @@ $(document).ready(function() {
                     $(mutation.addedNodes).each(function() {
                         const $node = $(this);
                         if ($node.is('ul')) {
-                            console.log('Mutation observer: New UL element added to DOM');
+                            // console.log('Mutation observer: New UL element added to DOM');
                             
                             // Find the parent LI element
                             const $parentLi = $node.closest('li.directory');
                             if ($parentLi.length > 0) {
-                                console.log('Found parent LI for new UL:', $parentLi.find('> a').attr('rel'));
+                                // console.log('Found parent LI for new UL:', $parentLi.find('> a').attr('rel'));
                                 
                                 // Check if the parent checkbox is checked
                                 const $parentCheckbox = $parentLi.find('> input[type="checkbox"]');
                                 if ($parentCheckbox.length > 0 && $parentCheckbox.is(':checked')) {
-                                    console.log('Parent checkbox is checked, disabling child checkboxes in mutation observer');
+                                    // console.log('Parent checkbox is checked, disabling child checkboxes in mutation observer');
                                     
                                     // Disable all child checkboxes
                                     const $childCheckboxes = $node.find('input[type="checkbox"]');
@@ -703,7 +703,7 @@ $(document).ready(function() {
                                 while ($ancestor.length > 0) {
                                     const $ancestorCheckbox = $ancestor.find('> input[type="checkbox"]');
                                     if ($ancestorCheckbox.length > 0 && $ancestorCheckbox.is(':checked')) {
-                                        console.log('Ancestor checkbox is checked, disabling child checkboxes in mutation observer');
+                                        // console.log('Ancestor checkbox is checked, disabling child checkboxes in mutation observer');
                                         
                                         // Disable all child checkboxes in the current folder
                                         const $childCheckboxes = $node.find('input[type="checkbox"]');
@@ -722,7 +722,7 @@ $(document).ready(function() {
         
         // Start observing the document with the configured parameters
         observer.observe(document.body, { childList: true, subtree: true });
-        console.log('Mutation observer successfully attached');
+        // console.log('Mutation observer successfully attached');
     } catch (e) {
         console.error('Error setting up mutation observer:', e);
     }

@@ -1009,7 +1009,7 @@
                 
                 // Use default redundancy directly
                 const defaultRedundancy = P.settings?.default_redundancy || 10;
-                console.log('Using default redundancy:', defaultRedundancy);
+                // console.log('Using default redundancy:', defaultRedundancy);
                 
                 // Show confirmation dialog with default redundancy
                 swal({
@@ -1320,7 +1320,7 @@
                     // Then add a longer delay to ensure the server has updated its data
                     setTimeout(function() {
                         // Always force a refresh with loading indicator to ensure UI updates
-                        console.log('Forcing second list refresh after operation completion');
+                        // console.log('Forcing second list refresh after operation completion');
                         list.refreshProtectedList(true);
                         
                         // Show notification based on operation type and status

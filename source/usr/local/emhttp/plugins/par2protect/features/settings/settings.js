@@ -224,7 +224,7 @@
                 if ($(`#${selectedExtSpanId}`).length === 0) {
                     // Add the selected extensions display after the default extensions dd element
                     // Log for debugging
-                    console.log('Adding selected extensions display for', category);
+                    // console.log('Adding selected extensions display for', category);
                     // Create the element with clear positioning and display
                     $input.closest('.extension-picker-container').append($('<div>').attr('id', selectedExtSpanId).addClass('selected-extensions').css({'display': 'block', 'clear': 'both', 'margin-top': '5px', 'font-size': '0.9em', 'color': '#666'}));
                 }

@@ -125,6 +125,9 @@ if (empty($formData)) {
         'max_concurrent_operations' => $currentConfig['resource_limits']['max_concurrent_operations'] ?? 2,
         'parallel_file_hashing' => $currentConfig['resource_limits']['parallel_file_hashing'] ?? 2,
         'log_level' => $currentConfig['logging']['level'] ?? 'INFO',
+        'error_log_mode' => $currentConfig['logging']['error_log_mode'] ?? 'both',
+        'log_backup_interval' => $currentConfig['logging']['backup_interval'] ?? 'daily',
+        'log_retention_days' => $currentConfig['logging']['retention_days'] ?? 7,
         'debug_logging' => $currentConfig['debug']['debug_logging'] ? 'true' : 'false'
     ];
 }
