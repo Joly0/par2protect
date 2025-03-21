@@ -120,7 +120,7 @@ if (empty($formData)) {
         'verify_hour2' => $currentConfig['protection']['verify_hour2'] ?? '*/1',
         'verify_min' => $currentConfig['protection']['verify_min'] ?? '0',
         'max_cpu_usage' => $currentConfig['resource_limits']['max_cpu_usage'] ?? null,
-        'max_memory' => $currentConfig['resource_limits']['max_memory_usage'] ?? 80,
+        'max_memory' => $currentConfig['resource_limits']['max_memory_usage'] ?? null,
         'io_priority' => $currentConfig['resource_limits']['io_priority'] ?? 'low',
         'max_concurrent_operations' => $currentConfig['resource_limits']['max_concurrent_operations'] ?? 2,
         'parallel_file_hashing' => $currentConfig['resource_limits']['parallel_file_hashing'] ?? 2,

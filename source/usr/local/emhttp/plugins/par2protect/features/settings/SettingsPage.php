@@ -132,7 +132,6 @@ class SettingsPage {
             'file_types.default_extensions',
             'debug.debug_logging',
             'queue.enabled',
-            'monitoring.enabled',
             'resource_monitoring.adaptive_limits',
             'notifications.enabled'
         ];
@@ -148,7 +147,6 @@ class SettingsPage {
             'resource_monitoring.memory_sample_interval',
             'resource_monitoring.io_sample_interval',
             'resource_monitoring.max_history_entries',
-            'monitoring.check_interval',
             'database.max_connections',
             'database.min_connections',
             'database.max_idle_time',

@@ -168,7 +168,7 @@ class Config {
             'description' => 'System resource usage limits',
             'settings' => [
                 'max_cpu_usage' => [
-                    'default' => 50,
+                    'default' => null,
                     'description' => 'Maximum CPU usage percentage for par2 operations'
                 ],
                 'max_concurrent_operations' => [
@@ -176,12 +176,8 @@ class Config {
                     'description' => 'Maximum number of concurrent par2 operations'
                 ],
                 'max_memory_usage' => [
-                    'default' => 80,
+                    'default' => null,
                     'description' => 'Maximum memory usage in MB (0 for unlimited)'
-                ],
-                'max_io_usage' => [
-                    'default' => 70,
-                    'description' => 'Maximum I/O usage percentage'
                 ],
                 'io_priority' => [
                     'default' => 'low',
@@ -212,19 +208,6 @@ class Config {
                 'adaptive_limits' => [
                     'default' => true,
                     'description' => 'Dynamically adjust resource limits based on system load'
-                ]
-            ]
-        ],
-        'monitoring' => [
-            'description' => 'System monitoring settings',
-            'settings' => [
-                'enabled' => [
-                    'default' => true,
-                    'description' => 'Enable or disable system monitoring'
-                ],
-                'check_interval' => [
-                    'default' => 300,
-                    'description' => 'Interval in seconds between system checks'
                 ]
             ]
         ],

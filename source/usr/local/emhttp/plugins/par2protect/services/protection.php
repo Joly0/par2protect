@@ -751,10 +751,12 @@ class Protection {
                 $extensionPattern = "\\( " . implode(' -o ', $extensionFilters) . " \\)";
                 
                 // Build find command with file extensions
-                $findCommand = "find " . escapeshellarg($path) . " " . $extensionPattern . " -type f -not -path \"*/" . $parityDirBase . "/*\" -not -path \"*/" . $parityDirBase . "-*/*\"";
+                // Use -print0 to handle filenames with spaces and special characters
+                $findCommand = "find " . escapeshellarg($path) . " " . $extensionPattern . " -type f -not -path \"*/" . $parityDirBase . "/*\" -not -path \"*/" . $parityDirBase . "-*/*\" -print0";
             } else {
                 // For directories without file type filtering
-                $findCommand = "find " . escapeshellarg($path) . " -type f -not -path \"*/" . $parityDirBase . "/*\" -not -path \"*/" . $parityDirBase . "-*/*\"";
+                // Use -print0 to handle filenames with spaces and special characters
+                $findCommand = "find " . escapeshellarg($path) . " -type f -not -path \"*/" . $parityDirBase . "/*\" -not -path \"*/" . $parityDirBase . "-*/*\" -print0";
             }
             
             // Log the find command
@@ -763,7 +765,8 @@ class Protection {
             ]);
             
             // Execute the find command to count files
-            $countCommand = $findCommand . " | wc -l";
+            // Convert null-terminated output to newlines for counting
+            $countCommand = $findCommand . " | tr '\\0' '\\n' | grep -v '^$' | wc -l";
             exec($countCommand, $countOutput, $countReturnCode);
             
             if ($countReturnCode !== 0) {
@@ -908,9 +911,8 @@ class Protection {
             // Build command with find command output
             // Use the directory as the basepath
             $basePath = $path;
-            $command = $baseCommand . " -B" . escapeshellarg($basePath) . " -a" . escapeshellarg($par2Path) . " -- \$(";
-            $command .= $findCommand;
-            $command .= ")";
+            // Use xargs -0 to handle null-terminated filenames from find -print0
+            $command = $findCommand . " | xargs -0 " . $baseCommand . " -B" . escapeshellarg($basePath) . " -a" . escapeshellarg($par2Path) . " --";
             
             // Log the file count and command
             $this->logger->debug("Protecting directory", [
@@ -977,9 +979,8 @@ class Protection {
                 
                 // Build command with find command output
                 $basePath = $path;
-                $command = $baseCommand . " -B" . escapeshellarg($basePath) . " -a" . escapeshellarg($par2Path) . " -- \$(";
-                $command .= $findCommand;
-                $command .= ")";
+                // Use xargs -0 to handle null-terminated filenames from find -print0
+                $command = $findCommand . " | xargs -0 " . $baseCommand . " -B" . escapeshellarg($basePath) . " -a" . escapeshellarg($par2Path) . " --";
                 
                 $this->logger->debug("DIAGNOSTIC: Directory protection command", [
                     'path' => $path,
@@ -1065,7 +1066,8 @@ class Protection {
                 
                 // Count files in this subdirectory
                 $subFindCommand = str_replace(escapeshellarg($path), escapeshellarg($subdir), $findCommand);
-                $countCommand = $subFindCommand . " | wc -l";
+                // Convert null-terminated output to newlines for counting
+                $countCommand = $subFindCommand . " | tr '\\0' '\\n' | grep -v '^$' | wc -l";
                 exec($countCommand, $countOutput, $countReturnCode);
                 
                 if ($countReturnCode !== 0) {
@@ -1085,9 +1087,8 @@ class Protection {
                 
                 // Create par2 command for this subdirectory
                 $subPar2Path = dirname($par2Path) . '/' . basename($subdir) . '.par2';
-                $subCommand = $baseCommand . " -B" . escapeshellarg($subdir) . " -a" . escapeshellarg($subPar2Path) . " -- \$(";
-                $subCommand .= $subFindCommand;
-                $subCommand .= ")";
+                // Use xargs -0 to handle null-terminated filenames from find -print0
+                $subCommand = $subFindCommand . " | xargs -0 " . $baseCommand . " -B" . escapeshellarg($subdir) . " -a" . escapeshellarg($subPar2Path) . " --";
                 
                 $this->logger->debug("Subdirectory par2 command", [
                     'subdir' => $subdir,
@@ -1133,13 +1134,13 @@ class Protection {
             
             for ($i = 0; $i < $numCommands; $i++) {
                 $start = $i * $batchSize;
-                $batchFindCommand = $findCommand . " | sort | head -n " . ($start + $batchSize) . " | tail -n $batchSize";
+                // Convert null-terminated output to newlines for sort/head/tail, then back to null-terminated for xargs
+                $batchFindCommand = $findCommand . " | tr '\\0' '\\n' | sort | head -n " . ($start + $batchSize) . " | tail -n $batchSize | tr '\\n' '\\0'";
                 
                 // Create par2 command for this batch
                 $batchPar2Path = dirname($par2Path) . '/' . basename($path) . "_batch" . ($i + 1) . ".par2";
-                $batchCommand = $baseCommand . " -B" . escapeshellarg($path) . " -a" . escapeshellarg($batchPar2Path) . " -- \$(";
-                $batchCommand .= $batchFindCommand;
-                $batchCommand .= ")";
+                // Use xargs -0 to handle null-terminated filenames from find -print0
+                $batchCommand = $batchFindCommand . " | xargs -0 " . $baseCommand . " -B" . escapeshellarg($path) . " -a" . escapeshellarg($batchPar2Path) . " --";
                 
                 $this->logger->debug("Batch par2 command", [
                     'batch' => $i + 1,
