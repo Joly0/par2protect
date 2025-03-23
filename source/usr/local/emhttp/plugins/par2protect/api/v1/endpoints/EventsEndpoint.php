@@ -35,10 +35,20 @@ class EventsEndpoint {
         $lastEventId = isset($_SERVER['HTTP_LAST_EVENT_ID']) ?
             intval($_SERVER['HTTP_LAST_EVENT_ID']) : 0;
         
-        // Keep the connection open
-        set_time_limit(0); // Disable time limit
+        // Keep the connection open but with a time limit to prevent Nginx timeouts
+        set_time_limit(0); // Disable PHP time limit
         
-        while (true) {
+        // Set maximum connection time to 30 seconds (below typical Nginx timeout of 60s)
+        $maxConnectionTime = 30; // seconds
+        $startTime = time();
+        $reconnectDelay = 1; // Recommend 1 second reconnect delay to client
+        
+        // Send initial retry directive to client
+        echo "retry: " . ($reconnectDelay * 1000) . "\n\n"; // in milliseconds
+        flush();
+        
+        // Instead of infinite loop, use a time-limited loop
+        while ((time() - $startTime) < $maxConnectionTime) {
             // Check for new events
             $events = $this->eventSystem->getEvents($lastEventId);
             
@@ -52,14 +62,25 @@ class EventsEndpoint {
                 flush();
             }
             
-            // Sleep to prevent CPU usage - use a longer sleep time to reduce log spam
-            sleep(3);
+            // Send a keep-alive comment every 10 seconds
+            if ((time() - $startTime) % 10 === 0) {
+                echo ": keepalive " . time() . "\n\n";
+                flush();
+            }
+            
+            // Sleep to prevent CPU usage - shorter sleep time for more responsiveness
+            sleep(2);
             
             // Check if client disconnected
             if (connection_aborted()) {
                 break;
             }
         }
+        
+        // Send a reconnect message before closing
+        echo "event: reconnect\n";
+        echo "data: {\"message\": \"Connection timeout, please reconnect\"}\n\n";
+        flush();
         
         exit();
     }

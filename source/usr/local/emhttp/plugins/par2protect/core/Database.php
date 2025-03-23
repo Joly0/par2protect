@@ -313,6 +313,15 @@ class Database {
     }
     
     /**
+     * Get number of rows affected by the last SQL statement
+     *
+     * @return int
+     */
+    public function changes() {
+        return $this->db->changes();
+    }
+    
+    /**
      * Close database connection
      *
      * @return void

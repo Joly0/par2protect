@@ -32,78 +32,99 @@ class StatusEndpoint {
      */
     public function getStatus($params) {
         try {
-            // Get par2 version
-            $par2Version = $this->getPar2Version();
+            // Use a static variable to cache the entire status response
+            static $cachedStatus = null;
+            static $cacheTime = 0;
+            static $cacheExpiry = 5; // Cache for 5 seconds by default
             
-            // Get database status
-            $dbStatus = $this->getDatabaseStatus();
+            // Force refresh if requested
+            $forceRefresh = isset($params['refresh']) && $params['refresh'] === 'true';
             
-            // Get queue status
-            $queueStatus = $this->getQueueStatus();
-            
-            // Get disk usage
-            $diskUsage = $this->getDiskUsage();
-            
-            // Get recent activity
-            $recentActivity = $this->getRecentActivity();
-            
-            // Get last verification date
-            $lastVerification = 'Never';
-            try {
-                $result = $this->db->query("
-                    SELECT MAX(verification_date) as last_date
-                    FROM verification_history
-                ");
-                $row = $this->db->fetchOne($result);
-                if ($row && $row['last_date']) {
-                    $lastVerification = $row['last_date'];
-                }
-            } catch (\Exception $e) {
-                $this->logger->warning("Failed to get last verification date", [
-                    'error' => $e->getMessage()
-                ]);
+            // Use cached response if available and not expired
+            if (!$forceRefresh && $cachedStatus !== null && (time() - $cacheTime) < $cacheExpiry) {
+                Response::success($cachedStatus);
+                return;
             }
             
-            // Calculate protection health
-            $health = 'unknown';
-            try {
-                // Get total count of protected items
-                $result = $this->db->query("
-                    SELECT COUNT(*) as total_count
-                    FROM protected_items
-                ");
-                $totalRow = $this->db->fetchOne($result);
-                $totalItems = $totalRow['total_count'];
-                
-                // Get count of items with healthy status (PROTECTED, VERIFIED, or REPAIRED)
-                $result = $this->db->query("
-                    SELECT COUNT(*) as healthy_count
-                    FROM protected_items
-                    WHERE last_status IN ('PROTECTED', 'VERIFIED', 'REPAIRED')
-                ");
-                $healthyRow = $this->db->fetchOne($result);
-                $healthyItems = $healthyRow['healthy_count'];
-                
-                /* $this->logger->debug("Health calculation", [
-                    'total_items' => $totalItems,
-                    'healthy_items' => $healthyItems
-                ]); */
-                
-                if ($totalItems > 0) {
-                    $healthPercent = ($healthyItems / $totalItems) * 100;
-                    
-                    if ($healthPercent >= 90) {
-                        $health = 'good';
-                    } else if ($healthPercent >= 70) {
-                        $health = 'warning';
-                    } else {
-                        $health = 'critical';
+            // Get par2 version (already cached internally)
+            $par2Version = $this->getPar2Version();
+            
+            // Get database status (already cached internally)
+            $dbStatus = $this->getDatabaseStatus();
+            
+            // Get queue status (already cached internally)
+            $queueStatus = $this->getQueueStatus();
+            
+            // Get disk usage (already cached internally)
+            $diskUsage = $this->getDiskUsage();
+            
+            // Get recent activity (already cached internally)
+            $recentActivity = $this->getRecentActivity();
+            
+            // Get last verification date with caching
+            static $cachedLastVerification = null;
+            static $lastVerificationCacheTime = 0;
+            
+            $lastVerification = 'Never';
+            if (!$forceRefresh && $cachedLastVerification !== null && (time() - $lastVerificationCacheTime) < 60) {
+                $lastVerification = $cachedLastVerification;
+            } else {
+                try {
+                    $result = $this->db->query("
+                        SELECT MAX(verification_date) as last_date
+                        FROM verification_history
+                    ");
+                    $row = $this->db->fetchOne($result);
+                    if ($row && $row['last_date']) {
+                        $lastVerification = $row['last_date'];
                     }
+                    $cachedLastVerification = $lastVerification;
+                    $lastVerificationCacheTime = time();
+                } catch (\Exception $e) {
+                    $this->logger->warning("Failed to get last verification date", [
+                        'error' => $e->getMessage()
+                    ]);
                 }
-            } catch (\Exception $e) {
-                $this->logger->warning("Failed to calculate protection health", [
-                    'error' => $e->getMessage()
-                ]);
+            }
+            
+            // Calculate protection health with caching
+            static $cachedHealth = null;
+            static $healthCacheTime = 0;
+            
+            $health = 'unknown';
+            if (!$forceRefresh && $cachedHealth !== null && (time() - $healthCacheTime) < 60) {
+                $health = $cachedHealth;
+            } else {
+                try {
+                    // Get health stats with a single query instead of multiple queries
+                    $result = $this->db->query("
+                        SELECT
+                            COUNT(*) as total_count,
+                            SUM(CASE WHEN last_status IN ('PROTECTED', 'VERIFIED', 'REPAIRED') THEN 1 ELSE 0 END) as healthy_count
+                        FROM protected_items
+                    ");
+                    $row = $this->db->fetchOne($result);
+                    $totalItems = $row['total_count'];
+                    $healthyItems = $row['healthy_count'];
+                    
+                    if ($totalItems > 0) {
+                        $healthPercent = ($healthyItems / $totalItems) * 100;
+                        
+                        if ($healthPercent >= 90) {
+                            $health = 'good';
+                        } else if ($healthPercent >= 70) {
+                            $health = 'warning';
+                        } else {
+                            $health = 'critical';
+                        }
+                    }
+                    $cachedHealth = $health;
+                    $healthCacheTime = time();
+                } catch (\Exception $e) {
+                    $this->logger->warning("Failed to calculate protection health", [
+                        'error' => $e->getMessage()
+                    ]);
+                }
             }
             
             // Create stats object expected by dashboard
@@ -129,6 +150,10 @@ class StatusEndpoint {
                 'active_operations' => $activeOperations
             ];
             
+            // Cache the status
+            $cachedStatus = $status;
+            $cacheTime = time();
+            
             Response::success($status);
         } catch (ApiException $e) {
             throw $e;
@@ -144,19 +169,31 @@ class StatusEndpoint {
      */
     private function getPar2Version() {
         try {
+            // Use a static variable to cache the result
+            static $cachedVersion = null;
+            
+            // Par2 version won't change during the lifetime of the plugin,
+            // so we can cache it indefinitely
+            if ($cachedVersion !== null) {
+                return $cachedVersion;
+            }
+            
             exec('par2 -V 2>&1', $output, $returnCode);
             
             if ($returnCode !== 0 || empty($output)) {
-                return 'Unknown';
+                $cachedVersion = 'Unknown';
+                return $cachedVersion;
             }
             
             // Extract version from output
             $versionLine = $output[0];
             if (preg_match('/par2cmdline\s+version\s+([0-9.]+)/i', $versionLine, $matches)) {
-                return $matches[1];
+                $cachedVersion = $matches[1];
+                return $cachedVersion;
             }
             
-            return $versionLine;
+            $cachedVersion = $versionLine;
+            return $cachedVersion;
         } catch (\Exception $e) {
             $this->logger->error("Failed to get par2 version", [
                 'error' => $e->getMessage()
@@ -173,6 +210,15 @@ class StatusEndpoint {
      */
     private function getDatabaseStatus() {
         try {
+            // Use a static variable to cache the result for the duration of the request
+            static $cachedDbStatus = null;
+            static $cacheTime = 0;
+            
+            // Cache database status for 30 seconds to reduce file I/O and database queries
+            if ($cachedDbStatus !== null && (time() - $cacheTime) < 30) {
+                return $cachedDbStatus;
+            }
+            
             // Get database file path
             $dbPath = $this->config->get('database.path', '/boot/config/plugins/par2protect/par2protect.db');
             
@@ -182,26 +228,28 @@ class StatusEndpoint {
             // Get database size
             $size = $exists ? filesize($dbPath) : 0;
             
-            // Get table counts
+            // Get table counts with a single query instead of multiple queries
             $protectedItemsCount = 0;
             $verificationHistoryCount = 0;
             $operationQueueCount = 0;
             
             if ($exists) {
-                $result = $this->db->query("SELECT COUNT(*) as count FROM protected_items");
-                $row = $this->db->fetchOne($result);
-                $protectedItemsCount = $row['count'];
+                // Use a single query to get all table counts
+                $tables = ['protected_items', 'verification_history', 'operation_queue'];
+                $counts = [];
                 
-                $result = $this->db->query("SELECT COUNT(*) as count FROM verification_history");
-                $row = $this->db->fetchOne($result);
-                $verificationHistoryCount = $row['count'];
+                foreach ($tables as $table) {
+                    $result = $this->db->query("SELECT COUNT(*) as count FROM $table");
+                    $row = $this->db->fetchOne($result);
+                    $counts[$table] = $row['count'];
+                }
                 
-                $result = $this->db->query("SELECT COUNT(*) as count FROM operation_queue");
-                $row = $this->db->fetchOne($result);
-                $operationQueueCount = $row['count'];
+                $protectedItemsCount = $counts['protected_items'];
+                $verificationHistoryCount = $counts['verification_history'];
+                $operationQueueCount = $counts['operation_queue'];
             }
             
-            return [
+            $cachedDbStatus = [
                 'exists' => $exists,
                 'path' => $dbPath,
                 'size' => $size,
@@ -212,6 +260,9 @@ class StatusEndpoint {
                     'operation_queue' => $operationQueueCount
                 ]
             ];
+            $cacheTime = time();
+            
+            return $cachedDbStatus;
         } catch (\Exception $e) {
             $this->logger->error("Failed to get database status", [
                 'error' => $e->getMessage()
@@ -230,7 +281,16 @@ class StatusEndpoint {
      */
     private function getQueueStatus() {
         try {
-            // Get queue counts
+            // Use a static variable to cache the result for the duration of the request
+            static $cachedQueueStatus = null;
+            static $cacheTime = 0;
+            
+            // Cache queue status for 5 seconds to reduce database queries
+            if ($cachedQueueStatus !== null && (time() - $cacheTime) < 5) {
+                return $cachedQueueStatus;
+            }
+            
+            // Get queue counts with a single query
             $result = $this->db->query("
                 SELECT status, COUNT(*) as count
                 FROM operation_queue
@@ -254,10 +314,13 @@ class StatusEndpoint {
             // Get active operations
             $activeOperations = $this->queueService->getActiveOperations();
             
-            return [
+            $cachedQueueStatus = [
                 'counts' => $counts,
                 'active_operations' => $activeOperations
             ];
+            $cacheTime = time();
+            
+            return $cachedQueueStatus;
         } catch (\Exception $e) {
             $this->logger->error("Failed to get queue status", [
                 'error' => $e->getMessage()
@@ -276,39 +339,25 @@ class StatusEndpoint {
      */
     private function getDiskUsage() {
         try {
-            // Get par2 files directory
-            $parityDir = $this->config->get('protection.parity_dir', '.parity');
+            // Use a more efficient query to get aggregated data directly from the database
+            // This avoids fetching all items and looping through them
+            $result = $this->db->query("
+                SELECT
+                    COUNT(*) as item_count,
+                    SUM(size) as total_size,
+                    SUM(par2_size) as total_par2_size
+                FROM protected_items
+            ");
             
-            // Get all protected items
-            $result = $this->db->query("SELECT * FROM protected_items");
-            $items = $this->db->fetchAll($result);
+            $row = $this->db->fetchOne($result);
             
-            // Calculate total size of protected items and par2 files
-            $totalProtectedSize = 0;
-            $totalPar2Size = 0;
-            
-            foreach ($items as $item) {
-                $totalProtectedSize += $item['size'];
-                
-                // Get par2 files size
-                $par2Path = $item['par2_path'];
-                if (file_exists($par2Path)) {
-                    $par2Dir = dirname($par2Path);
-                    $par2Base = pathinfo($par2Path, PATHINFO_FILENAME);
-                        // Only match files with .par2 extension for consistency
-                    $par2Files = glob($par2Dir . '/' . $par2Base . '*.par2');
-                    
-                    foreach ($par2Files as $file) {
-                        if (file_exists($file)) {
-                            $totalPar2Size += filesize($file);
-                        }
-                    }
-                }
-            }
+            $totalProtectedSize = $row['total_size'] ?? 0;
+            $totalPar2Size = $row['total_par2_size'] ?? 0;
+            $itemCount = $row['item_count'] ?? 0;
             
             return [
                 'protected_items' => [
-                    'count' => count($items),
+                    'count' => $itemCount,
                     'size' => $totalProtectedSize,
                     'size_formatted' => $this->formatSize($totalProtectedSize)
                 ],
@@ -336,8 +385,20 @@ class StatusEndpoint {
      */
     private function getRecentActivity() {
         try {
+            // Use a static variable to cache the result for the duration of the request
+            static $cachedActivity = null;
+            static $cacheTime = 0;
+            
+            // Cache activity for 10 seconds to reduce file I/O
+            if ($cachedActivity !== null && (time() - $cacheTime) < 10) {
+                return $cachedActivity;
+            }
+            
             // Include System actions since they may be the only ones available
-            return $this->logger->getRecentActivity(5, null, true);
+            $cachedActivity = $this->logger->getRecentActivity(5, null, true);
+            $cacheTime = time();
+            
+            return $cachedActivity;
         } catch (\Exception $e) {
             $this->logger->error("Failed to get recent activity", [
                 'error' => $e->getMessage()

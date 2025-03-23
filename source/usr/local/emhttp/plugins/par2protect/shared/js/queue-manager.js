@@ -623,6 +623,19 @@
                 P.events.trigger('operation.completed', data);
             });
             
+            // Handle reconnect event from server
+            this.eventSource.addEventListener('reconnect', function(e) {
+                P.logger.debug('Server requested reconnection');
+                queueManager.closeEventSource();
+                
+                // Reconnect immediately
+                setTimeout(function() {
+                    if (!queueManager.isPageUnloading) {
+                        queueManager.initEventSource();
+                    }
+                }, 1000); // Use 1 second delay as suggested by server
+            });
+            
             // Set up error handler
             this.eventSource.onerror = function(event) {
                 // Don't log errors if the page is being unloaded
@@ -645,7 +658,7 @@
                     if (!queueManager.isPageUnloading) {
                         queueManager.initEventSource();
                     }
-                }, 5000);
+                }, 3000); // Reduced from 5000ms to 3000ms for faster recovery
             };
             // P.logger.info('EventSource initialized');
         },
