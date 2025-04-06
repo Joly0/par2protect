@@ -18,7 +18,7 @@ PAR2Protect is an Unraid plugin that uses par2 commands to protect, verify, and 
 
 ## Installation
 
-1. Install the plugin from the Unraid Community Applications
+1. Install the plugin from the Unraid Community Applications (not yet, probably later)
 2. Navigate to the PAR2Protect page in the Unraid webUI
 3. Configure settings as needed
 
