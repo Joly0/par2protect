@@ -3,7 +3,12 @@ Title="Dashboard"
 Tag="dashboard"
 ---
 <?php
-require_once("/usr/local/emhttp/plugins/par2protect/core/bootstrap.php");
+// Include bootstrap for core components
+$GLOBALS['par2protect_components'] = include_once("/usr/local/emhttp/plugins/par2protect/core/bootstrap.php");
+
+// Output frontend includes
+par2protect_output_frontend_includes();
+
 $dashboardPage = new \Par2Protect\Features\Dashboard\DashboardPage();
 $dashboardPage->render();
 ?>

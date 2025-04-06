@@ -6,18 +6,20 @@
  */
 
 // Load bootstrap
-$bootstrap = require_once(__DIR__ . '/../core/bootstrap.php');
+$bootstrap = require_once(__DIR__ . '/../../core/bootstrap.php'); // Corrected path
 
-use Par2Protect\Core\Logger;
-use Par2Protect\Core\Config;
-use Par2Protect\Core\QueueDatabase;
-use Par2Protect\Core\Cache;
+// No need for use statements
+// use Par2Protect\Core\Logger;
+// use Par2Protect\Core\Config;
+// use Par2Protect\Core\QueueDatabase;
+// use Par2Protect\Core\Cache;
 
-// Get components
-$logger = Logger::getInstance();
-$config = Config::getInstance();
-$queueDb = QueueDatabase::getInstance();
-$cache = Cache::getInstance();
+// Get components from container
+$container = get_container();
+$logger = $container->get('logger');
+$config = $container->get('config');
+$queueDb = $container->get('queueDb');
+$cache = $container->get('cache');
 
 // Log start
 echo "Starting Database Optimization Test\n";

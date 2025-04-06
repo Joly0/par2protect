@@ -6,16 +6,18 @@
  */
 
 // Load bootstrap
-$bootstrap = require_once(__DIR__ . '/../core/bootstrap.php');
+$bootstrap = require_once(__DIR__ . '/../../core/bootstrap.php'); // Corrected path
 
-use Par2Protect\Core\Logger;
-use Par2Protect\Core\Config;
-use Par2Protect\Core\Cache;
+// No need for use statements
+// use Par2Protect\Core\Logger;
+// use Par2Protect\Core\Config;
+// use Par2Protect\Core\Cache;
 
-// Get components
-$logger = Logger::getInstance();
-$config = Config::getInstance();
-$cache = Cache::getInstance();
+// Get components from container
+$container = get_container();
+$logger = $container->get('logger');
+$config = $container->get('config');
+$cache = $container->get('cache');
 
 // Log start
 $logger->info("Starting Cache test");

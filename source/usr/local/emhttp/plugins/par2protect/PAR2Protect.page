@@ -4,3 +4,27 @@ Icon="shield"
 Type="xmenu"
 Tabs="true"
 ---
+<script>
+  document.addEventListener("DOMContentLoaded", function() {
+    let tab1 = document.getElementById("tab1");
+    let label1 = document.querySelector('label[for="tab1"]');
+    let tab2 = document.getElementById("tab2");
+
+    if (tab1 && tab2) {
+      // Remove tab1 from the DOM
+      tab1.remove();
+      if (label1) label1.remove();
+
+      // Set tab2 as the selected tab
+      tab2.checked = true;
+    }
+  });
+</script>
+
+<?php
+// Include bootstrap for core components and frontend resources
+$GLOBALS['par2protect_components'] = include_once("/usr/local/emhttp/plugins/par2protect/core/bootstrap.php");
+
+// Output frontend includes
+par2protect_output_frontend_includes();
+?>

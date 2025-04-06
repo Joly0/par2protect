@@ -33,7 +33,7 @@ $bgcolor = strstr('white,azure', $display['theme']) ? '#f2f2f2' : '#1c1c1c';
                 <option value="file">Files</option>
                 <option value="directory">Directories</option>
             </select>
-            <button id="refresh-list-btn" onclick="Par2Protect.list.refreshProtectedList(true)">
+            <button id="refresh-list-btn">
                 <i class="fa fa-refresh"></i> Refresh
             </button>
         </div>
@@ -68,8 +68,6 @@ $(function() {
     Par2Protect.list.refreshProtectedList(false);
 });
 </script>
-<link rel="stylesheet" href="/plugins/par2protect/features/list/verification-options.css">
-<script src="/plugins/par2protect/features/list/verification-options.js"></script>
 
 <!-- Include Verification Options Dialog -->
 <?php include 'verification-options-dialog.php'; ?>

@@ -5,7 +5,7 @@ namespace Par2Protect\Services;
 require_once __DIR__ . '/protection/Protection.php';
 require_once __DIR__ . '/protection/ProtectionRepository.php';
 require_once __DIR__ . '/protection/ProtectionOperations.php';
-require_once __DIR__ . '/protection/MetadataManager.php';
+// require_once __DIR__ . '/protection/MetadataManager.php'; // Removed - Consolidated to Core
 require_once __DIR__ . '/protection/helpers/FormatHelper.php';
 
 // For backward compatibility, we'll create a class with the same name in the same namespace

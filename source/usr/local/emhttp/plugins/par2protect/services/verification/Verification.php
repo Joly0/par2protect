@@ -11,9 +11,9 @@ use Par2Protect\Core\Exceptions\ApiException;
  * Main verification service class
  */
 class Verification {
-    private $repository;      // VerificationRepository instance
-    private $operations;      // VerificationOperations instance
-    private $metadataManager; // MetadataManager instance
+    private VerificationRepository $repository;
+    private VerificationOperations $operations;
+    private \Par2Protect\Core\MetadataManager $metadataManager; // Use the Core manager
     private $logger;          // Logger instance
     private $config;          // Config instance
     private $cache;           // Cache instance
@@ -21,17 +21,24 @@ class Verification {
     /**
      * Verification service constructor
      */
-    public function __construct() {
-        // Initialize core dependencies
-        $this->logger = Logger::getInstance();
-        $this->config = Config::getInstance();
-        $this->cache = Cache::getInstance();
-        $db = Database::getInstance();
-        
-        // Initialize specialized classes
-        $this->repository = new VerificationRepository($db, $this->logger, $this->cache);
-        $this->operations = new VerificationOperations($this->logger, $this->config);
-        $this->metadataManager = new MetadataManager($db, $this->logger);
+    // Updated constructor with all dependencies injected
+    public function __construct(
+        Logger $logger,
+        Config $config,
+        Cache $cache,
+        Database $db, // Keep $db if repository doesn't cover all needs? Review usage.
+        VerificationRepository $repository,
+        VerificationOperations $operations,
+        \Par2Protect\Core\MetadataManager $metadataManager // Inject Core manager
+    ) {
+        // Store injected dependencies
+        $this->logger = $logger;
+        $this->config = $config;
+        $this->cache = $cache;
+        $this->db = $db; // Store the injected DB instance
+        $this->repository = $repository;
+        $this->operations = $operations;
+        $this->metadataManager = $metadataManager;
     }
     
     /**
@@ -100,12 +107,13 @@ class Verification {
                 return $this->cache->get($cacheKey);
             }
             
-            // Get protected item
-            $result = Database::getInstance()->query(
+            // Get protected item using container
+            $db = $this->db; // Use the injected DB instance
+            $result = $db->query(
                 "SELECT * FROM protected_items WHERE id = :id",
                 [':id' => $id]
             );
-            $item = Database::getInstance()->fetchOne($result);
+            $item = $db->fetchOne($result);
             
             if (!$item) {
                 throw ApiException::notFound("Item not found with ID: $id");
@@ -220,6 +228,12 @@ class Verification {
             // Clear cache for this item
             $this->repository->clearVerificationCache($item['id'], $path);
             
+            // Also clear the protected items cache to ensure the list is refreshed
+            $this->cache->remove('protected_items_all');
+            $this->logger->debug("Protected items cache cleared after verification", [
+                'path' => $path
+            ]);
+            
             $this->logger->info("Verify operation completed", [
                 'path' => $path,
                 'status' => $verifyResult['status'],
@@ -230,7 +244,8 @@ class Verification {
             return [
                 'success' => true,
                 'status' => $verifyResult['status'],
-                'details' => $verifyResult['details']
+                'details' => $verifyResult['details'],
+                'refresh_list' => true
             ];
         } catch (ApiException $e) {
             throw $e;
@@ -267,12 +282,13 @@ class Verification {
         ]);
         
         try {
-            // Get the protected item by ID
-            $result = Database::getInstance()->query(
+            // Get the protected item by ID using container
+            $db = \get_container()->get('database');
+            $result = $db->query(
                 "SELECT * FROM protected_items WHERE id = :id",
                 [':id' => $id]
             );
-            $item = Database::getInstance()->fetchOne($result);
+            $item = $db->fetchOne($result);
             
             if (!$item) {
                 throw ApiException::notFound("Item not found with ID: $id");
@@ -323,6 +339,13 @@ class Verification {
             // Clear cache for this item
             $this->repository->clearVerificationCache($item['id'], $path);
             
+            // Also clear the protected items cache to ensure the list is refreshed
+            $this->cache->remove('protected_items_all');
+            $this->logger->debug("Protected items cache cleared after verification by ID", [
+                'id' => $id,
+                'path' => $path
+            ]);
+            
             $this->logger->info("Verify operation completed by ID", [
                 'id' => $id,
                 'path' => $path,
@@ -334,7 +357,8 @@ class Verification {
             return [
                 'success' => true,
                 'status' => $verifyResult['status'],
-                'details' => $verifyResult['details']
+                'details' => $verifyResult['details'],
+                'refresh_list' => true
             ];
         } catch (ApiException $e) {
             throw $e;
@@ -417,6 +441,12 @@ class Verification {
             // Clear cache for this item
             $this->repository->clearVerificationCache($item['id'], $path);
             
+            // Also clear the protected items cache to ensure the list is refreshed
+            $this->cache->remove('protected_items_all');
+            $this->logger->debug("Protected items cache cleared after repair", [
+                'path' => $path
+            ]);
+            
             $this->logger->info("Repair operation completed", [
                 'path' => $path,
                 'status' => $repairResult['status'],
@@ -427,7 +457,8 @@ class Verification {
             return [
                 'success' => true,
                 'status' => $repairResult['status'],
-                'details' => $repairResult['details']
+                'details' => $repairResult['details'],
+                'refresh_list' => true
             ];
         } catch (ApiException $e) {
             throw $e;
@@ -460,12 +491,13 @@ class Verification {
         ]);
         
         try {
-            // Get the protected item by ID
-            $result = Database::getInstance()->query(
+            // Get the protected item by ID using container
+            $db = \get_container()->get('database');
+            $result = $db->query(
                 "SELECT * FROM protected_items WHERE id = :id",
                 [':id' => $id]
             );
-            $item = Database::getInstance()->fetchOne($result);
+            $item = $db->fetchOne($result);
             
             if (!$item) {
                 throw ApiException::notFound("Item not found with ID: $id");
@@ -505,6 +537,13 @@ class Verification {
             // Clear cache for this item
             $this->repository->clearVerificationCache($item['id'], $path);
             
+            // Also clear the protected items cache to ensure the list is refreshed
+            $this->cache->remove('protected_items_all');
+            $this->logger->debug("Protected items cache cleared after repair by ID", [
+                'id' => $id,
+                'path' => $path
+            ]);
+            
             $this->logger->info("Repair operation completed by ID", [
                 'id' => $id,
                 'path' => $path,
@@ -516,7 +555,8 @@ class Verification {
             return [
                 'success' => true,
                 'status' => $repairResult['status'],
-                'details' => $repairResult['details']
+                'details' => $repairResult['details'],
+                'refresh_list' => true
             ];
         } catch (ApiException $e) {
             throw $e;

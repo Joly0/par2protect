@@ -9,12 +9,14 @@
 // Load bootstrap
 $bootstrap = require_once(__DIR__ . '/../core/bootstrap.php');
 
-use Par2Protect\Core\Logger;
-use Par2Protect\Core\Config;
+// No need for use statements
+// use Par2Protect\Core\Logger;
+// use Par2Protect\Core\Config;
 
-// Get components
-$logger = Logger::getInstance();
-$config = Config::getInstance();
+// Get components from container
+$container = get_container();
+$logger = $container->get('logger');
+$config = $container->get('config');
 
 // Log start
 $logger->info("Starting log backup operation");

@@ -16,6 +16,11 @@ class Response {
         // Set content type
         header('Content-Type: application/json');
         
+        // Set cache control headers to prevent caching
+        header('Cache-Control: no-cache, no-store, must-revalidate');
+        header('Pragma: no-cache');
+        header('Expires: 0');
+        
         // Set status code
         http_response_code($statusCode);
         
@@ -32,18 +37,25 @@ class Response {
      * @param int $statusCode HTTP status code
      * @return void
      */
-    public static function success($data = null, $message = 'Success', $statusCode = 200) {
-        $response = [
-            'success' => true,
-            'message' => $message
-        ];
-        
-        if ($data !== null) {
-            $response['data'] = $data;
-        }
-        
-        self::json($response, $statusCode);
-    }
+    public static function success($data = null, $message = 'Success', $additionalData = [], $statusCode = 200) {
+       $response = [
+           'success' => true,
+           'message' => $message
+       ];
+       
+       if ($data !== null) {
+           $response['data'] = $data;
+       }
+       
+       // Add any additional data to the response
+       if (is_array($additionalData) && !empty($additionalData)) {
+           foreach ($additionalData as $key => $value) {
+               $response[$key] = $value;
+           }
+       }
+       
+       self::json($response, $statusCode);
+   }
     
     /**
      * Send error response

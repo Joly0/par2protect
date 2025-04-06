@@ -16,12 +16,17 @@ class Queue {
     /**
      * Queue service constructor
      */
-    public function __construct() {
-        $this->db = Database::getInstance();
-        $this->queueDb = QueueDatabase::getInstance();
-        $this->logger = Logger::getInstance();
-        $this->config = Config::getInstance();
-        
+    public function __construct(
+        Database $db,
+        QueueDatabase $queueDb,
+        Logger $logger,
+        Config $config
+    ) {
+        $this->db = $db;
+        $this->queueDb = $queueDb;
+        $this->logger = $logger;
+        $this->config = $config;
+
         // Ensure queue table exists
         $this->queueDb->initializeQueueTable();
     }
@@ -50,13 +55,13 @@ class Queue {
         if ($type === 'protect' && isset($parameters['file_types'])) {
             $this->logger->debug("DIAGNOSTIC: Protection operation details", [
                 'path' => $parameters['path'] ?? 'unknown',
-                'file_types' => is_array($parameters['file_types']) ? 
+                'file_types' => is_array($parameters['file_types']) ?
                     json_encode($parameters['file_types']) : $parameters['file_types'],
                 'file_types_type' => gettype($parameters['file_types']),
-                'file_types_count' => is_array($parameters['file_types']) ? 
+                'file_types_count' => is_array($parameters['file_types']) ?
                     count($parameters['file_types']) : 'not an array',
-                'file_categories' => isset($parameters['file_categories']) ? 
-                    (is_array($parameters['file_categories']) ? 
+                'file_categories' => isset($parameters['file_categories']) ?
+                    (is_array($parameters['file_categories']) ?
                     json_encode($parameters['file_categories']) : $parameters['file_categories']) : 'not set'
             ]);
         }
@@ -84,73 +89,103 @@ class Queue {
             ]);
         }
         
-        try {
-            // Validate operation type
-            $validTypes = ['protect', 'verify', 'remove', 'repair'];
-            if (!in_array($type, $validTypes)) {
-                throw ApiException::badRequest("Invalid operation type: $type");
-            }
-            
-            // Validate parameters - either path or id must be provided
-            if ((!isset($parameters['path']) || empty($parameters['path'])) && 
-                (!isset($parameters['id']) || empty($parameters['id']))) {
-                throw ApiException::badRequest("Either path or id parameter is required");
-            }
-            
-            // Prepare the parameters outside the transaction to minimize transaction duration
-            $now = time();
-            $encodedParameters = json_encode($parameters);
-            $this->queueDb->beginTransaction();
+        // Retry logic for database locked errors
+        $maxRetries = 3;
+        $retryDelay = 100; // milliseconds
+        $attempt = 0;
+        
+        while ($attempt < $maxRetries) {
+            try {
+                // Validate operation type
+                $validTypes = ['protect', 'verify', 'remove', 'repair'];
+                if (!in_array($type, $validTypes)) {
+                    throw ApiException::badRequest("Invalid operation type: $type");
+                }
+                
+                // Validate parameters - either path or id must be provided
+                if ((!isset($parameters['path']) || empty($parameters['path'])) &&
+                    (!isset($parameters['id']) || empty($parameters['id']))) {
+                    throw ApiException::badRequest("Either path or id parameter is required");
+                }
+                
+                // Prepare the parameters outside the transaction to minimize transaction duration
+                $now = time();
+                $encodedParameters = json_encode($parameters);
+                
+                // Begin transaction with retry logic
+                $this->queueDb->beginTransaction();
 
-            $result = $this->queueDb->query(
-                "INSERT INTO operation_queue (operation_type, parameters, status, created_at, updated_at)
-                VALUES (:type, :parameters, 'pending', :now, :now)",
-                [
-                    ':type' => $type,
-                    ':parameters' => $encodedParameters,
-                    ':now' => $now
-                ]
-            );
+                $result = $this->queueDb->query(
+                    "INSERT INTO operation_queue (operation_type, parameters, status, created_at, updated_at)
+                    VALUES (:type, :parameters, 'pending', :now, :now)",
+                    [
+                        ':type' => $type,
+                        ':parameters' => $encodedParameters,
+                        ':now' => $now
+                    ]
+                );
 
-            // Get operation ID within the same transaction
-            $operationId = $this->queueDb->lastInsertId();
-            $this->queueDb->commit();
+                // Get operation ID within the same transaction
+                $operationId = $this->queueDb->lastInsertId();
+                $this->queueDb->commit();
 
-            
-            $this->logger->debug("Operation added to queue successfully", [
-                'operation_id' => $operationId,
-                'type' => $type,
-                'operation_type' => $type,
-                'id' => $parameters['id'] ?? null,
-                'path' => $parameters['path'] ?? null,
-                'status' => 'Success',
-                'action' => ucfirst($type)
-            ]);
-            
-            // Start queue processor
-            $this->startQueueProcessor();
-            
-            return [
-                'success' => true,
-                'operation_id' => $operationId,
-                'message' => 'Operation added to queue'
-            ];
-        } catch (ApiException $e) {
-            if (isset($this->queueDb) && $this->queueDb->inTransaction) {
-                $this->queueDb->rollback();
+                $this->logger->debug("Operation added to queue successfully", [
+                    'operation_id' => $operationId,
+                    'type' => $type,
+                    'operation_type' => $type,
+                    'id' => $parameters['id'] ?? null,
+                    'path' => $parameters['path'] ?? null,
+                    'status' => 'Success',
+                    'action' => ucfirst($type)
+                ]);
+                
+                // Start queue processor
+                $this->startQueueProcessor();
+                
+                return [
+                    'success' => true,
+                    'operation_id' => $operationId,
+                    'message' => 'Operation added to queue'
+                ];
+                
+            } catch (\PDOException $e) {
+                // Check if this is a database locked error
+                if (strpos($e->getMessage(), 'database is locked') !== false && $attempt < $maxRetries - 1) {
+                    $attempt++;
+                    $this->logger->debug("Database locked, retrying attempt $attempt", [
+                        'error' => $e->getMessage()
+                    ]);
+                    
+                    // Rollback if in transaction
+                    if ($this->queueDb->inTransaction()) {
+                        $this->queueDb->rollback();
+                    }
+                    
+                    // Exponential backoff
+                    usleep($retryDelay * 1000 * (1 + $attempt));
+                    continue;
+                }
+                throw $e;
+            } catch (ApiException $e) {
+                if ($this->queueDb->inTransaction()) {
+                    $this->queueDb->rollback();
+                }
+                throw $e;
+            } catch (\Exception $e) {
+                if ($this->queueDb->inTransaction()) {
+                    $this->queueDb->rollback();
+                }
+                
+                $this->logger->error("Failed to add operation to queue", [
+                    'error' => $e->getMessage()
+                ]);
+                
+                throw new ApiException("Failed to add operation to queue: " . $e->getMessage());
             }
-            throw $e;
-        } catch (\Exception $e) {
-            if (isset($this->queueDb) && $this->queueDb->inTransaction) {
-                $this->queueDb->rollback();
-            }
-            
-            $this->logger->error("Failed to add operation to queue", [
-                'error' => $e->getMessage()
-            ]);
-            
-            throw new ApiException("Failed to add operation to queue: " . $e->getMessage());
         }
+        
+        // If we get here, all retries failed
+        throw new ApiException("Failed to add operation to queue after $maxRetries attempts due to database lock");
     }
     
     /**
@@ -230,18 +265,17 @@ class Queue {
             $recentTime = time() - 30; // 30 seconds ago
             
             $result = $this->queueDb->query(
+                 // Select only genuinely active operations
                 "SELECT * FROM operation_queue
-                WHERE status = 'processing'
-                OR (status IN ('completed', 'failed', 'cancelled', 'skipped')
-                    AND completed_at >= :recent_time)
+                WHERE status = 'processing' OR status = 'pending'
                 ORDER BY
                     CASE
-                        WHEN status = 'processing' THEN 0
-                        ELSE 1
+                        WHEN status = 'pending' THEN 0
+                        WHEN status = 'processing' THEN 1
+                        ELSE 2 -- Should not happen with WHERE clause
                     END,
-                    completed_at DESC,
-                    started_at DESC",
-                [':recent_time' => $recentTime]
+                    created_at ASC", // Process oldest pending first
+                [] // No parameters needed now
             );
             
             $operations = $this->queueDb->fetchAll($result);

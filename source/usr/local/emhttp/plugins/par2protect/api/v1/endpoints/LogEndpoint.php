@@ -13,9 +13,9 @@ class LogEndpoint {
     /**
      * LogEndpoint constructor
      */
-    public function __construct() {
-        $this->logger = Logger::getInstance();
-        $this->config = Config::getInstance();
+    public function __construct(Logger $logger, Config $config) {
+        $this->logger = $logger;
+        $this->config = $config;
     }
     
     /**

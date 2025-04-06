@@ -13,15 +13,24 @@ class StatusEndpoint {
     private $logger;
     private $db;
     private $queueService;
+    private $protectionService; // Added property
     
     /**
      * StatusEndpoint constructor
      */
-    public function __construct() {
-        $this->config = Config::getInstance();
-        $this->logger = Logger::getInstance();
-        $this->db = Database::getInstance();
-        $this->queueService = new Queue();
+    // Added Protection service dependency
+    public function __construct(
+        Config $config,
+        Logger $logger,
+        Database $db,
+        Queue $queueService,
+        \Par2Protect\Services\Protection $protectionService // Added dependency
+    ) {
+        $this->config = $config;
+        $this->logger = $logger;
+        $this->db = $db;
+        $this->queueService = $queueService;
+        $this->protectionService = $protectionService; // Store dependency
     }
     
     /**
@@ -35,7 +44,7 @@ class StatusEndpoint {
             // Use a static variable to cache the entire status response
             static $cachedStatus = null;
             static $cacheTime = 0;
-            static $cacheExpiry = 5; // Cache for 5 seconds by default
+            static $cacheExpiry = 30; // Cache for 30 seconds by default to reduce frequent updates
             
             // Force refresh if requested
             $forceRefresh = isset($params['refresh']) && $params['refresh'] === 'true';
@@ -54,6 +63,24 @@ class StatusEndpoint {
             
             // Get queue status (already cached internally)
             $queueStatus = $this->getQueueStatus();
+            
+            // Check if we should include additional data
+            $includeQueue = isset($params['include_queue']) && $params['include_queue'] === 'true';
+            $includeProtection = isset($params['include_protection']) && $params['include_protection'] === 'true';
+            
+            // Get protection data if requested
+            $protectionData = null;
+            if ($includeProtection) {
+                // Use the injected protection service
+                // $protectionService = new \Par2Protect\Services\Protection\Protection(); // Removed direct instantiation
+                $protectionData = $this->protectionService->getAllProtectedItems();
+                
+                // Check if this is an automatic refresh request
+                $isAutoRequest = isset($_GET['_manual']) && $_GET['_manual'] === 'false';
+                $isRefreshRequest = isset($_GET['_caller']) && $_GET['_caller'] === 'updateStatus';
+                
+                // Protection data inclusion is not logged to reduce noise
+            }
             
             // Get disk usage (already cached internally)
             $diskUsage = $this->getDiskUsage();
@@ -150,6 +177,11 @@ class StatusEndpoint {
                 'active_operations' => $activeOperations
             ];
             
+            // Include protection data if requested
+            if ($includeProtection && $protectionData !== null) {
+                $status['protected_items'] = $protectionData;
+            }
+            
             // Cache the status
             $cachedStatus = $status;
             $cacheTime = time();
@@ -214,8 +246,8 @@ class StatusEndpoint {
             static $cachedDbStatus = null;
             static $cacheTime = 0;
             
-            // Cache database status for 30 seconds to reduce file I/O and database queries
-            if ($cachedDbStatus !== null && (time() - $cacheTime) < 30) {
+            // Cache database status for 60 seconds to reduce file I/O and database queries
+            if ($cachedDbStatus !== null && (time() - $cacheTime) < 60) {
                 return $cachedDbStatus;
             }
             
@@ -285,8 +317,8 @@ class StatusEndpoint {
             static $cachedQueueStatus = null;
             static $cacheTime = 0;
             
-            // Cache queue status for 5 seconds to reduce database queries
-            if ($cachedQueueStatus !== null && (time() - $cacheTime) < 5) {
+            // Cache queue status for 15 seconds to reduce database queries
+            if ($cachedQueueStatus !== null && (time() - $cacheTime) < 15) {
                 return $cachedQueueStatus;
             }
             
@@ -389,14 +421,20 @@ class StatusEndpoint {
             static $cachedActivity = null;
             static $cacheTime = 0;
             
-            // Cache activity for 10 seconds to reduce file I/O
-            if ($cachedActivity !== null && (time() - $cacheTime) < 10) {
+            // Cache activity for 30 seconds to reduce file I/O
+            if ($cachedActivity !== null && (time() - $cacheTime) < 30) {
                 return $cachedActivity;
             }
+            
+            // Check if this is an automatic refresh request
+            $isAutoRequest = isset($_GET['_manual']) && $_GET['_manual'] === 'false';
+            $isRefreshRequest = isset($_GET['_caller']) && $_GET['_caller'] === 'updateStatus';
             
             // Include System actions since they may be the only ones available
             $cachedActivity = $this->logger->getRecentActivity(5, null, true);
             $cacheTime = time();
+            
+            // No logging for getRecentActivity to reduce noise
             
             return $cachedActivity;
         } catch (\Exception $e) {

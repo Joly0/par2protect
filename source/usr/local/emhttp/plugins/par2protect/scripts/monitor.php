@@ -9,33 +9,20 @@
 // Load bootstrap
 $bootstrap = require_once(__DIR__ . '/../core/bootstrap.php');
 
-use Par2Protect\Core\Database;
-use Par2Protect\Core\Logger;
-use Par2Protect\Core\Config;
+// No need for use statements
+// use Par2Protect\Core\Database;
+// use Par2Protect\Core\Logger;
+// use Par2Protect\Core\Config;
 
-// Get components
-$logger = Logger::getInstance();
-$db = Database::getInstance();
-$config = Config::getInstance();
+// Get components from container
+$container = get_container();
+$logger = $container->get('logger');
+$db = $container->get('database');
+$config = $container->get('config');
 
-// Function to log to both the logger and stdout
-function log_message($message, $level = 'INFO') {
-    global $logger;
-    
-    // Log to the logger
-    if ($level === 'INFO') {
-        $logger->info($message);
-    } elseif ($level === 'ERROR') {
-        $logger->error($message);
-    } elseif ($level === 'WARNING') {
-        $logger->warning($message);
-    } elseif ($level === 'DEBUG') {
-        $logger->debug($message);
-    }
-    
-    // Also output to stdout for the script to capture
-    echo date('[Y-m-d H:i:s]') . " $level: $message\n";
-}
+// Enable console output for this script
+$logger->enableStdoutLogging(true);
+
 
 // Parse command line options
 $options = getopt('', ['verbose::', 'fix::', 'email::']);
@@ -43,20 +30,20 @@ $verbose = isset($options['verbose']);
 $fix = isset($options['fix']);
 $email = isset($options['email']) ? $options['email'] : null;
 
-log_message("Starting PAR2Protect monitor", $verbose ? 'DEBUG' : 'INFO');
+if ($verbose) { $logger->debug("Starting PAR2Protect monitor"); } else { $logger->info("Starting PAR2Protect monitor"); }
 
 // Check database
-log_message("Checking database", $verbose ? 'DEBUG' : 'INFO');
+if ($verbose) { $logger->debug("Checking database"); } else { $logger->info("Checking database"); }
 $dbPath = $config->get('database.path', '/boot/config/plugins/par2protect/par2protect.db');
 $dbIssues = [];
 
 // Check if database file exists
 if (!file_exists($dbPath)) {
     $dbIssues[] = "Database file does not exist: $dbPath";
-    log_message("Database file does not exist: $dbPath", 'ERROR');
+    $logger->error("Database file does not exist: $dbPath");
     
     if ($fix) {
-        log_message("Attempting to create database", 'WARNING');
+        $logger->warning("Attempting to create database");
         
         // Run init_db.php
         $initScript = __DIR__ . '/init_db.php';
@@ -66,15 +53,15 @@ if (!file_exists($dbPath)) {
             exec("php $initScript 2>&1", $output, $returnCode);
             
             if ($returnCode === 0) {
-                log_message("Database created successfully", 'INFO');
+                $logger->info("Database created successfully");
             } else {
-                log_message("Failed to create database", 'ERROR');
+                $logger->error("Failed to create database");
                 foreach ($output as $line) {
-                    log_message("  $line", 'ERROR');
+                    $logger->error("  $line");
                 }
             }
         } else {
-            log_message("init_db.php not found at: $initScript", 'ERROR');
+            $logger->error("init_db.php not found at: $initScript");
         }
     }
 } else {
@@ -91,10 +78,10 @@ if (!file_exists($dbPath)) {
             
             if (!$row) {
                 $dbIssues[] = "Table '$table' does not exist";
-                log_message("Table '$table' does not exist", 'ERROR');
+                $logger->error("Table '$table' does not exist");
                 
                 if ($fix) {
-                    log_message("Attempting to reinitialize database", 'WARNING');
+                    $logger->warning("Attempting to reinitialize database");
                     
                     // Run init_db.php
                     $initScript = __DIR__ . '/init_db.php';
@@ -104,16 +91,16 @@ if (!file_exists($dbPath)) {
                         exec("php $initScript 2>&1", $output, $returnCode);
                         
                         if ($returnCode === 0) {
-                            log_message("Database reinitialized successfully", 'INFO');
+                            $logger->info("Database reinitialized successfully");
                             break; // No need to check other tables
                         } else {
-                            log_message("Failed to reinitialize database", 'ERROR');
+                            $logger->error("Failed to reinitialize database");
                             foreach ($output as $line) {
-                                log_message("  $line", 'ERROR');
+                                $logger->error("  $line");
                             }
                         }
                     } else {
-                        log_message("init_db.php not found at: $initScript", 'ERROR');
+                        $logger->error("init_db.php not found at: $initScript");
                     }
                 }
             }
@@ -130,15 +117,15 @@ if (!file_exists($dbPath)) {
         
         if (!empty($stuckOperations)) {
             $dbIssues[] = "Found " . count($stuckOperations) . " stuck operations";
-            log_message("Found " . count($stuckOperations) . " stuck operations", 'WARNING');
+            $logger->warning("Found " . count($stuckOperations) . " stuck operations");
             
             if ($fix) {
-                log_message("Attempting to fix stuck operations", 'WARNING');
+                $logger->warning("Attempting to fix stuck operations");
                 
                 $db->beginTransaction();
                 
                 foreach ($stuckOperations as $op) {
-                    log_message("Marking operation " . $op['id'] . " as failed", 'WARNING');
+                    $logger->warning("Marking operation " . $op['id'] . " as failed");
                     
                     $db->query(
                         "UPDATE operation_queue
@@ -159,23 +146,23 @@ if (!file_exists($dbPath)) {
                 }
                 
                 $db->commit();
-                log_message("Fixed stuck operations", 'INFO');
+                $logger->info("Fixed stuck operations");
             }
         }
     } catch (Exception $e) {
         $dbIssues[] = "Database error: " . $e->getMessage();
-        log_message("Database error: " . $e->getMessage(), 'ERROR');
+        $logger->error("Database error: " . $e->getMessage());
     }
 }
 
 // Check queue processor
-log_message("Checking queue processor", $verbose ? 'DEBUG' : 'INFO');
+if ($verbose) { $logger->debug("Checking queue processor"); } else { $logger->info("Checking queue processor"); }
 $queueIssues = [];
 
 // Check if queue is enabled
 $queueEnabled = $config->get('queue.enabled', true);
 if (!$queueEnabled) {
-    log_message("Queue is disabled in configuration", 'INFO');
+    $logger->info("Queue is disabled in configuration");
 } else {
     // Check if queue processor is running
     $queueLockFile = '/boot/config/plugins/par2protect/queue/processor.lock';
@@ -190,10 +177,10 @@ if (!$queueEnabled) {
             
             if ($pendingCount > 0) {
                 $queueIssues[] = "Queue processor not running but there are $pendingCount pending operations";
-                log_message("Queue processor not running but there are $pendingCount pending operations", 'WARNING');
+                $logger->warning("Queue processor not running but there are $pendingCount pending operations");
                 
                 if ($fix) {
-                    log_message("Attempting to start queue processor", 'WARNING');
+                    $logger->warning("Attempting to start queue processor");
                     
                     // Start queue processor
                     $processorPath = $config->get('queue.processor_path', '/usr/local/emhttp/plugins/par2protect/scripts/process_queue.php');
@@ -201,20 +188,20 @@ if (!$queueEnabled) {
                         $command = "nohup php $processorPath " .
                                   ">> /boot/config/plugins/par2protect/queue_processor.log 2>&1 &";
                         exec($command);
-                        log_message("Started queue processor", 'INFO');
+                        $logger->info("Started queue processor");
                     } else {
-                        log_message("Queue processor script not found at: $processorPath", 'ERROR');
+                        $logger->error("Queue processor script not found at: $processorPath");
                     }
                 }
             } else {
-                log_message("Queue processor not running but no pending operations", 'INFO');
+                $logger->info("Queue processor not running but no pending operations");
             }
         } catch (Exception $e) {
             $queueIssues[] = "Error checking queue: " . $e->getMessage();
-            log_message("Error checking queue: " . $e->getMessage(), 'ERROR');
+            $logger->error("Error checking queue: " . $e->getMessage());
         }
     } else {
-        log_message("Queue processor is running", 'INFO');
+        $logger->info("Queue processor is running");
         
         // Check if the process is actually running
         $pid = file_get_contents($queueLockFile);
@@ -226,10 +213,10 @@ if (!$queueEnabled) {
             
             if (!$processExists) {
                 $queueIssues[] = "Queue processor lock file exists but process $pid is not running";
-                log_message("Queue processor lock file exists but process $pid is not running", 'WARNING');
+                $logger->warning("Queue processor lock file exists but process $pid is not running");
                 
                 if ($fix) {
-                    log_message("Removing stale lock file", 'WARNING');
+                    $logger->warning("Removing stale lock file");
                     @unlink($queueLockFile);
                     
                     // Start queue processor
@@ -238,20 +225,20 @@ if (!$queueEnabled) {
                         $command = "nohup php $processorPath " .
                                   ">> /boot/config/plugins/par2protect/queue_processor.log 2>&1 &";
                         exec($command);
-                        log_message("Started queue processor", 'INFO');
+                        $logger->info("Started queue processor");
                     } else {
-                        log_message("Queue processor script not found at: $processorPath", 'ERROR');
+                        $logger->error("Queue processor script not found at: $processorPath");
                     }
                 }
             } else {
-                log_message("Queue processor is running with PID $pid", 'INFO');
+                $logger->info("Queue processor is running with PID $pid");
             }
         } else {
             $queueIssues[] = "Queue processor lock file exists but contains invalid PID: $pid";
-            log_message("Queue processor lock file exists but contains invalid PID: $pid", 'WARNING');
+            $logger->warning("Queue processor lock file exists but contains invalid PID: $pid");
             
             if ($fix) {
-                log_message("Removing invalid lock file", 'WARNING');
+                $logger->warning("Removing invalid lock file");
                 @unlink($queueLockFile);
             }
         }
@@ -259,7 +246,7 @@ if (!$queueEnabled) {
 }
 
 // Check par2 command
-log_message("Checking par2 command", $verbose ? 'DEBUG' : 'INFO');
+if ($verbose) { $logger->debug("Checking par2 command"); } else { $logger->info("Checking par2 command"); }
 $par2Issues = [];
 
 // Check if par2 command is available
@@ -269,10 +256,10 @@ exec("which par2 2>&1", $output, $returnCode);
 
 if ($returnCode !== 0) {
     $par2Issues[] = "par2 command not found";
-    log_message("par2 command not found", 'ERROR');
+    $logger->error("par2 command not found");
 } else {
     $par2Path = trim($output[0]);
-    log_message("par2 command found at: $par2Path", 'INFO');
+    $logger->info("par2 command found at: $par2Path");
     
     // Check par2 version
     $output = [];
@@ -281,57 +268,57 @@ if ($returnCode !== 0) {
     
     if ($returnCode !== 0) {
         $par2Issues[] = "Failed to get par2 version";
-        log_message("Failed to get par2 version", 'ERROR');
+        $logger->error("Failed to get par2 version");
     } else {
         $par2Version = trim($output[0]);
-        log_message("par2 version: $par2Version", 'INFO');
+        $logger->info("par2 version: $par2Version");
         
         // Check if it's par2cmdline-turbo
         if (strpos($par2Version, 'turbo') === false) {
             $par2Issues[] = "par2 is not par2cmdline-turbo";
-            log_message("par2 is not par2cmdline-turbo, some features may not work correctly", 'WARNING');
+            $logger->warning("par2 is not par2cmdline-turbo, some features may not work correctly");
         }
     }
 }
 
 // Check log file
-log_message("Checking log file", $verbose ? 'DEBUG' : 'INFO');
+if ($verbose) { $logger->debug("Checking log file"); } else { $logger->info("Checking log file"); }
 $logIssues = [];
 
 // Check if log file exists and is writable
 $logPath = $config->get('logging.path', '/boot/config/plugins/par2protect/par2protect.log');
 if (!file_exists($logPath)) {
-    log_message("Log file does not exist: $logPath", 'WARNING');
+    $logger->warning("Log file does not exist: $logPath");
     
     // Try to create log file
     $logDir = dirname($logPath);
     if (!is_dir($logDir)) {
         if (!@mkdir($logDir, 0755, true)) {
             $logIssues[] = "Failed to create log directory: $logDir";
-            log_message("Failed to create log directory: $logDir", 'ERROR');
+            $logger->error("Failed to create log directory: $logDir");
         }
     }
     
     if (!@touch($logPath)) {
         $logIssues[] = "Failed to create log file: $logPath";
-        log_message("Failed to create log file: $logPath", 'ERROR');
+        $logger->error("Failed to create log file: $logPath");
     } else {
-        log_message("Created log file: $logPath", 'INFO');
+        $logger->info("Created log file: $logPath");
     }
 } else if (!is_writable($logPath)) {
     $logIssues[] = "Log file is not writable: $logPath";
-    log_message("Log file is not writable: $logPath", 'ERROR');
+    $logger->error("Log file is not writable: $logPath");
     
     if ($fix) {
-        log_message("Attempting to fix log file permissions", 'WARNING');
+        $logger->warning("Attempting to fix log file permissions");
         if (@chmod($logPath, 0644)) {
-            log_message("Fixed log file permissions", 'INFO');
+            $logger->info("Fixed log file permissions");
         } else {
-            log_message("Failed to fix log file permissions", 'ERROR');
+            $logger->error("Failed to fix log file permissions");
         }
     }
 } else {
-    log_message("Log file is writable: $logPath", 'INFO');
+    $logger->info("Log file is writable: $logPath");
     
     // Check log file size
     $logSize = filesize($logPath);
@@ -339,10 +326,10 @@ if (!file_exists($logPath)) {
     
     if ($logSize > $maxSize) {
         $logIssues[] = "Log file is too large: " . round($logSize / 1024 / 1024, 2) . " MB";
-        log_message("Log file is too large: " . round($logSize / 1024 / 1024, 2) . " MB", 'WARNING');
+        $logger->warning("Log file is too large: " . round($logSize / 1024 / 1024, 2) . " MB");
         
         if ($fix) {
-            log_message("Attempting to rotate log file", 'WARNING');
+            $logger->warning("Attempting to rotate log file");
             
             // Rotate log file
             $maxFiles = $config->get('logging.max_files', 5);
@@ -362,7 +349,7 @@ if (!file_exists($logPath)) {
             // Create new log file
             @touch($logPath);
             
-            log_message("Rotated log file", 'INFO');
+            $logger->info("Rotated log file");
         }
     }
 }
@@ -372,17 +359,17 @@ $allIssues = array_merge($dbIssues, $queueIssues, $par2Issues, $logIssues);
 $issueCount = count($allIssues);
 
 if ($issueCount === 0) {
-    log_message("No issues found", 'INFO');
+    $logger->info("No issues found");
 } else {
-    log_message("Found $issueCount issues:", 'WARNING');
+    $logger->warning("Found $issueCount issues:");
     foreach ($allIssues as $i => $issue) {
-        log_message(($i + 1) . ". $issue", 'WARNING');
+        $logger->warning(($i + 1) . ". $issue");
     }
 }
 
 // Send email if requested
 if ($email && $issueCount > 0) {
-    log_message("Sending email to: $email", 'INFO');
+    $logger->info("Sending email to: $email");
     
     $subject = "PAR2Protect Monitor: $issueCount issues found";
     $message = "PAR2Protect Monitor Report\n\n";
@@ -395,10 +382,10 @@ if ($email && $issueCount > 0) {
     $message .= "\n\nThis email was sent by the PAR2Protect monitor script.";
     
     if (mail($email, $subject, $message)) {
-        log_message("Email sent successfully", 'INFO');
+        $logger->info("Email sent successfully");
     } else {
-        log_message("Failed to send email", 'ERROR');
+        $logger->error("Failed to send email");
     }
 }
 
-log_message("Monitor completed", 'INFO');
+$logger->info("Monitor completed");

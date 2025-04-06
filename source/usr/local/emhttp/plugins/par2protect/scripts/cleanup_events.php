@@ -8,16 +8,19 @@
 // Load bootstrap
 $bootstrap = require_once(__DIR__ . '/../core/bootstrap.php');
 
-use Par2Protect\Core\Logger;
-use Par2Protect\Core\EventSystem;
+// No need for use statements
+// use Par2Protect\Core\Logger;
+// use Par2Protect\Core\EventSystem;
 
-$logger = Logger::getInstance();
-$eventSystem = EventSystem::getInstance();
+// Get components from container
+$container = get_container();
+$logger = $container->get('logger');
+$eventSystem = $container->get('eventSystem');
 
 $logger->info("Starting event cleanup");
 
 // Clean up events older than 1 day
-$count = $eventSystem->cleanupOldEvents(1);
+$count = $eventSystem->cleanupOldEvents(0.5); // 0.5 days = 12 hours
 
 $logger->info("Event cleanup completed", [
     'deleted_count' => $count

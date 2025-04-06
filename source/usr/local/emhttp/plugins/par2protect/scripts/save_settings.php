@@ -10,9 +10,10 @@
 // Include bootstrap
 require_once dirname(__DIR__) . '/core/bootstrap.php';
 
-// Get config and logger
-$config = \Par2Protect\Core\Config::getInstance();
-$logger = \Par2Protect\Core\Logger::getInstance();
+// Get components from container
+$container = get_container();
+$config = $container->get('config');
+$logger = $container->get('logger');
 
 // Create settings page instance
 $settingsPage = new \Par2Protect\Features\Settings\SettingsPage();

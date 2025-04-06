@@ -6,7 +6,8 @@
  */
 
 // Load bootstrap
-$bootstrap = require_once(__DIR__ . '/../../core/bootstrap.php');
+// $bootstrap now holds the container instance
+$container = require_once(__DIR__ . '/../../core/bootstrap.php');
 
 use Par2Protect\Api\V1\Router;
 use Par2Protect\Core\Exceptions\ApiException;
@@ -26,20 +27,55 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit;
 }
 
-// Get logger
-$logger = Logger::getInstance();
-$logger->debug("API request received", [
-    'method' => $_SERVER['REQUEST_METHOD'],
-    'uri' => $_SERVER['REQUEST_URI'],
-    'query' => $_GET,
-    'content_type' => $_SERVER['CONTENT_TYPE'] ?? 'none'
-]);
+// Get logger from container
+$logger = $container->get('logger');
+// Generate a unique request ID that will be used throughout the request lifecycle
+$requestId = 'req_' . bin2hex(random_bytes(8));
+// Make the request ID available globally
+$GLOBALS['requestId'] = $requestId;
+
+// Only log basic request info for non-automatic requests
+// This prevents excessive logging from frequent automatic refreshes
+$isAutoRequest = isset($_GET['_manual']) && $_GET['_manual'] === 'false';
+$isRefreshRequest = isset($_GET['_caller']) && ($_GET['_caller'] === 'refreshProtectedList' || $_GET['_caller'] === 'updateStatus');
+
+// Only log if it's a manual request or if debug mode is explicitly enabled
+if ((!$isAutoRequest && !$isRefreshRequest) || (defined('DEBUG_MODE') && DEBUG_MODE)) {
+    $logger->debug("API request received", [
+        'request_id' => $requestId,
+        'method' => $_SERVER['REQUEST_METHOD'],
+        'uri' => $_SERVER['REQUEST_URI'],
+        'query' => $_GET,
+        'content_type' => $_SERVER['CONTENT_TYPE'] ?? ''
+    ]);
+}
 
 // Create router
-$router = new Router();
+$router = new Router($container); // Pass container to router
 
 // Load routes
 require_once(__DIR__ . '/routes.php');
+
+// Get endpoint from query parameter if available
+$endpoint = isset($_GET['endpoint']) ? $_GET['endpoint'] : null;
+
+// If this is the events endpoint, send SSE headers immediately
+if ($endpoint === 'events' && $_SERVER['REQUEST_METHOD'] === 'GET') {
+    // Set headers for SSE
+    header('Content-Type: text/event-stream');
+    header('Cache-Control: no-cache');
+    header('Connection: keep-alive');
+    header('X-Accel-Buffering: no'); // For Nginx
+
+    // Prevent output buffering
+    if (ob_get_level()) ob_end_clean();
+
+    // Send an initial comment to establish the connection immediately
+    // This helps satisfy the browser quickly
+    echo ": SSE connection init\n\n";
+    @flush(); // Use @ to suppress potential errors if output buffering is weird
+    @ob_flush();
+}
 
 // Error handling
 try {
@@ -78,11 +114,16 @@ try {
             $_SERVER['REQUEST_METHOD'] = strtoupper($_POST['_method']);
         }
         
-        $logger->debug("Routing to endpoint via parameter", [
-            'endpoint' => $endpoint,
-            'uri' => $uri,
-            'method' => $_SERVER['REQUEST_METHOD']
-        ]);
+        // Reuse the same variables we defined earlier
+        // Only log routing information for non-automatic requests or in explicit debug mode
+        if ((!$isAutoRequest && !$isRefreshRequest) || (defined('DEBUG_MODE') && DEBUG_MODE)) {
+            $logger->debug("Routing to endpoint via parameter", [
+                'endpoint' => $endpoint,
+                'uri' => $uri,
+                'method' => $_SERVER['REQUEST_METHOD'],
+                'request_id' => $requestId
+            ]);
+        }
         
         // Dispatch to the endpoint
         $router->dispatch($uri);
@@ -109,12 +150,14 @@ try {
         'trace' => $e->getTraceAsString()
     ]);
     
-    // Return generic error response
+    // Return more detailed error response for debugging
     Response::json([
         'success' => false,
         'error' => [
             'code' => 'internal_error',
-            'message' => 'An unexpected error occurred'
+            'message' => 'An unexpected error occurred: ' . $e->getMessage(),
+            'file' => $e->getFile(),
+            'line' => $e->getLine()
         ]
     ], 500);
 }

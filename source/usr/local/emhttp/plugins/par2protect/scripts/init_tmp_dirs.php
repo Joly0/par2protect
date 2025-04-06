@@ -9,12 +9,14 @@
 // Load bootstrap
 $bootstrap = require_once(__DIR__ . '/../core/bootstrap.php');
 
-use Par2Protect\Core\Logger;
-use Par2Protect\Core\Config;
+// No need for use statements
+// use Par2Protect\Core\Logger;
+// use Par2Protect\Core\Config;
 
-// Get components
-$logger = Logger::getInstance();
-$config = Config::getInstance();
+// Get components from container
+$container = get_container();
+$logger = $container->get('logger');
+$config = $container->get('config');
 
 // Log start
 $logger->info("Initializing temporary directories for PAR2Protect");
@@ -25,7 +27,8 @@ $tmpDirs = [
     '/tmp/par2protect/queue',            // Queue directory
     '/tmp/par2protect/logs',             // Logs directory
     '/tmp/par2protect/locks',            // Locks directory
-    '/tmp/par2protect/cache'             // Cache directory
+    '/tmp/par2protect/cache',            // Cache directory
+    '/tmp/par2protect/events'            // Events directory
 ];
 
 // Create directories

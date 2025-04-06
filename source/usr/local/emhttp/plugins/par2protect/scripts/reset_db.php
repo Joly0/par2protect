@@ -9,32 +9,19 @@
 // Load bootstrap
 $bootstrap = require_once(__DIR__ . '/../core/bootstrap.php');
 
-use Par2Protect\Core\Database;
-use Par2Protect\Core\Logger;
-use Par2Protect\Core\Config;
+// No need for use statements if getting from container
+// use Par2Protect\Core\Database;
+// use Par2Protect\Core\Logger;
+// use Par2Protect\Core\Config;
 
-// Get components
-$logger = Logger::getInstance();
-$config = Config::getInstance();
+// Get components from container
+$container = get_container();
+$logger = $container->get('logger');
+$config = $container->get('config');
 
-// Function to log to both the logger and stdout
-function log_message($message, $level = 'INFO') {
-    global $logger;
-    
-    // Log to the logger
-    if ($level === 'INFO') {
-        $logger->info($message);
-    } elseif ($level === 'ERROR') {
-        $logger->error($message);
-    } elseif ($level === 'WARNING') {
-        $logger->warning($message);
-    } elseif ($level === 'DEBUG') {
-        $logger->debug($message);
-    }
-    
-    // Also output to stdout for the script to capture
-    echo date('[Y-m-d H:i:s]') . " $level: $message\n";
-}
+// Enable console output for this script
+$logger->enableStdoutLogging(true);
+
 
 // Check if force flag is provided
 $force = false;
@@ -47,50 +34,50 @@ foreach ($argv as $arg) {
 
 // Get database path
 $dbPath = $config->get('database.path', '/boot/config/plugins/par2protect/par2protect.db');
-log_message("Database path: $dbPath");
+$logger->info("Database path: $dbPath");
 
 // Check if database file exists
 if (!file_exists($dbPath)) {
-    log_message("Database file does not exist, nothing to reset", 'WARNING');
-    log_message("Run init_db.php to create a new database");
+    $logger->warning("Database file does not exist, nothing to reset");
+    $logger->info("Run init_db.php to create a new database");
     exit(0);
 }
 
 // Confirm reset if not forced
 if (!$force) {
-    log_message("WARNING: This will delete all data in the database!", 'WARNING');
-    log_message("To proceed, run this script with the --force flag", 'WARNING');
+    $logger->warning("WARNING: This will delete all data in the database!");
+    $logger->warning("To proceed, run this script with the --force flag");
     exit(0);
 }
 
 // Close any existing database connections
-$db = Database::getInstance();
+$db = $container->get('database');
 $db->close();
 
 // Backup the database
 $backupPath = $dbPath . '.backup.' . date('YmdHis');
-log_message("Creating backup at: $backupPath");
+$logger->info("Creating backup at: $backupPath");
 
 if (!copy($dbPath, $backupPath)) {
-    log_message("Failed to create backup", 'ERROR');
+    $logger->error("Failed to create backup");
     exit(1);
 }
 
 // Delete the database
-log_message("Deleting database file");
+$logger->info("Deleting database file");
 if (!unlink($dbPath)) {
-    log_message("Failed to delete database file", 'ERROR');
+    $logger->error("Failed to delete database file");
     exit(1);
 }
 
 // Reinitialize the database
-log_message("Reinitializing database");
-log_message("Running init_db.php");
+$logger->info("Reinitializing database");
+$logger->info("Running init_db.php");
 
 // Run init_db.php
 $initScript = __DIR__ . '/init_db.php';
 if (!file_exists($initScript)) {
-    log_message("init_db.php not found at: $initScript", 'ERROR');
+    $logger->error("init_db.php not found at: $initScript");
     exit(1);
 }
 
@@ -101,10 +88,10 @@ exec("php $initScript 2>&1", $output, $returnCode);
 
 // Check if init_db.php succeeded
 if ($returnCode !== 0) {
-    log_message("Failed to initialize database", 'ERROR');
-    log_message("Output from init_db.php:", 'ERROR');
+    $logger->error("Failed to initialize database");
+    $logger->error("Output from init_db.php:");
     foreach ($output as $line) {
-        log_message("  $line", 'ERROR');
+        $logger->error("  $line");
     }
     exit(1);
 }
@@ -114,5 +101,5 @@ foreach ($output as $line) {
     echo $line . "\n";
 }
 
-log_message("Database reset completed successfully");
-log_message("Backup created at: $backupPath");
+$logger->info("Database reset completed successfully");
+$logger->info("Backup created at: $backupPath");

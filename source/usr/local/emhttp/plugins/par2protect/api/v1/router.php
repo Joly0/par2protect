@@ -5,16 +5,22 @@ use Par2Protect\Core\Exceptions\ApiException;
 use Par2Protect\Core\Logger;
 use Par2Protect\Core\Response;
 
+use Par2Protect\Core\Container; // Add use statement for Container
+
 class Router {
     private $routes = [];
     private $logger;
+    private $container; // Add property for container
     private $basePath = '/plugins/par2protect/api/v1';
-    
+
     /**
      * Router constructor
+     * @param Container $container The DI container instance
      */
-    public function __construct() {
-        $this->logger = Logger::getInstance();
+    public function __construct(Container $container) {
+        $this->container = $container;
+        // Get logger from container if needed (e.g., for dispatch logging)
+        $this->logger = $this->container->get('logger');
     }
     
     /**
@@ -92,6 +98,8 @@ class Router {
      */
     public function dispatch($uri) {
         $method = $_SERVER['REQUEST_METHOD'];
+        // Use the request ID from index.php if available, otherwise generate a new one
+        $requestId = isset($GLOBALS['requestId']) ? $GLOBALS['requestId'] : uniqid('req_');
         
         // Handle OPTIONS requests for CORS
         if ($method === 'OPTIONS') {
@@ -112,11 +120,23 @@ class Router {
             $path = '/' . $path;
         }
         
-        $this->logger->debug("Dispatching request", [
-            'method' => $method,
-            'path' => $path,
-            'uri' => $uri
-        ]);
+        // Log detailed request information only for non-automatic requests
+        // This helps reduce log spam from frequent automatic refreshes
+        $isAutoRequest = isset($_GET['_manual']) && $_GET['_manual'] === 'false';
+        $isRefreshRequest = isset($_GET['_caller']) && ($_GET['_caller'] === 'refreshProtectedList' || $_GET['_caller'] === 'updateStatus');
+        
+        // Only log if it's a manual request or if debug mode is explicitly enabled
+        if ((!$isAutoRequest && !$isRefreshRequest) || (defined('DEBUG_MODE') && DEBUG_MODE)) {
+            $this->logger->debug("API request received", [
+                'request_id' => $requestId,
+                'method' => $method,
+                'uri' => $uri,
+                'query' => $_GET,
+                'content_type' => $_SERVER['CONTENT_TYPE'] ?? '',
+                'referer' => $_SERVER['HTTP_REFERER'] ?? '',
+                'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? ''
+            ]);
+        }
         
         // Find matching route
         $handler = null;
@@ -185,7 +205,39 @@ class Router {
                 throw new ApiException("Controller not found: $controller", 500, 'controller_not_found');
             }
             
-            $instance = new $controller();
+            // Get controller instance from container
+            // Assumes controllers will be registered in the container later
+            try {
+                // Try with the original controller name
+                if ($this->container->has($controller)) {
+                    $instance = $this->container->get($controller);
+                }
+                // Try without the leading backslash if present
+                else if (strpos($controller, '\\') === 0 && $this->container->has(substr($controller, 1))) {
+                    $instance = $this->container->get(substr($controller, 1));
+                }
+                // Try with a leading backslash if not present
+                else if (strpos($controller, '\\') !== 0 && $this->container->has('\\' . $controller)) {
+                    $instance = $this->container->get('\\' . $controller);
+                }
+                else {
+                    // Log available services for debugging
+                    $this->logger->error("Controller not found in container", [
+                        'controller' => $controller,
+                        'controller_without_backslash' => strpos($controller, '\\') === 0 ? substr($controller, 1) : null,
+                        'controller_with_backslash' => strpos($controller, '\\') !== 0 ? '\\' . $controller : null
+                    ]);
+                    throw new \Exception("Controller not found in container: $controller");
+                }
+            } catch (\Exception $e) {
+                // Log the error
+                $this->logger->error("Failed to get controller from container", [
+                    'controller' => $controller,
+                    'error' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString()
+                ]);
+                throw new ApiException("Failed to get controller from container: $controller - " . $e->getMessage(), 500, 'controller_not_found');
+            }
             
             // Check if method exists
             if (!method_exists($instance, $method)) {

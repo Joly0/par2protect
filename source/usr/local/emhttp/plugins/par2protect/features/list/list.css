@@ -97,16 +97,16 @@
         flex-direction: column;
         align-items: stretch;
     }
-    
+
     .action-bar .left-actions,
     .action-bar .right-actions {
         width: 100%;
     }
-    
+
     .filter-dropdown {
         width: 100%;
     }
-    
+
     .protected-files-table {
         display: block;
         overflow-x: auto;
@@ -251,16 +251,52 @@
 .error-details-container {
     max-height: 400px;
     overflow-y: auto;
-    overflow-x: hidden; 
+    overflow-x: hidden;
     text-align: left;
     width: 100%;
 }
 
 .error-details-container pre {
     white-space: pre;
-    background-color: var(--pre-background); 
-    color: var(--text); 
+    background-color: var(--pre-background);
+    color: var(--text);
     width: 100%;
     margin: 0;
     padding: 10px;
+}
+
+/* === Merged from verification-options.css === */
+/* Verification Options Dialog Styles */
+
+/* Dialog positioning and appearance */
+.par2-dialog-verify {
+    position: fixed !important;
+    top: 35% !important;
+    left: 50% !important;
+    transform: translateX(-50%) !important;
+    min-width: 500px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    /* box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+    z-index: 10001 !important; /* Ensure dialog is above other elements */
+    overflow: visible !important;
+}
+
+/* Dialog content */
+.par2-dialog-verify .dialog-content {
+    padding: 20px;
+    border-radius: 4px;
+    position: relative;
+}
+
+/* Dialog overlay to prevent clicking through */
+.dialog-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.5);
+    z-index: 10000;
+    display: none;
 }

@@ -6,8 +6,16 @@ class SettingsPage {
     private $config;
     
     public function __construct() {
-        $this->logger = \Par2Protect\Core\Logger::getInstance();
-        $this->config = \Par2Protect\Core\Config::getInstance();
+        // Check if we need to initialize components or if they're already available from the parent page
+        // Ensure bootstrap is included (if not already)
+        include_once(dirname(dirname(__DIR__)) . '/core/bootstrap.php');
+        
+        // Get the container instance using the global function
+        $container = get_container();
+
+        // Get required services from the container
+        $this->logger = $container->get('logger');
+        $this->config = $container->get('config');
     }
     
     public function render() {

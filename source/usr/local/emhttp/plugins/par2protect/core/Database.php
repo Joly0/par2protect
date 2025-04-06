@@ -5,7 +5,8 @@ namespace Par2Protect\Core;
  * Database class for handling database operations
  */
 class Database {
-    private static $instance = null;
+    // private static $instance = null; // Removed for DI
+    // private static $sharedConnection = null; // Removed, connection managed per instance
     private $db = null;
     private $logger = null;
     private $config = null;
@@ -18,9 +19,13 @@ class Database {
     /**
      * Private constructor to prevent direct instantiation
      */
-    private function __construct() {
-        $this->logger = Logger::getInstance();
-        $this->config = Config::getInstance();
+    // private static $connectionCount = 0; // Removed
+    // private static $instanceCount = 0; // Removed
+
+    // Make constructor public and inject dependencies
+    public function __construct(Logger $logger, Config $config) {
+        $this->logger = $logger;
+        $this->config = $config;
         
         // Get database path from config
         $this->dbPath = $this->config->get('database.path', $this->dbPath);
@@ -48,13 +53,7 @@ class Database {
      *
      * @return Database
      */
-    public static function getInstance() {
-        if (self::$instance === null) {
-            self::$instance = new self();
-        }
-        
-        return self::$instance;
-    }
+    // Removed getInstance() method
     
     /**
      * Connect to database
@@ -63,8 +62,16 @@ class Database {
      */
     private function connect() {
         try {
+            // Removed shared connection logic - each instance connects independently
+            // if (self::$sharedConnection !== null) { ... }
+            
+            // Removed connection counter
+            // self::$connectionCount++;
             // Create new SQLite database connection
             $this->db = new \SQLite3($this->dbPath);
+            
+            // Removed shared connection logic
+            // self::$sharedConnection = $this->db;
             
             // Set journal mode
             $journalMode = $this->config->get('database.journal_mode', 'WAL');
@@ -81,19 +88,12 @@ class Database {
             // Enable foreign keys
             $this->db->exec('PRAGMA foreign_keys = ON');
             
-            $this->logger->debug("Database connected", [
-                'path' => $this->dbPath,
-                'journal_mode' => $journalMode,
-                'synchronous' => $synchronous,
-                'max_retries' => $this->maxRetries,
-                'initial_retry_delay' => $this->initialRetryDelay,
-                'max_retry_delay' => $this->maxRetryDelay,
-                'busy_timeout' => $busyTimeout
-            ]);
+            // Database connections are not logged to reduce noise
         } catch (\Exception $e) {
             $this->logger->error("Database connection failed", [
                 'path' => $this->dbPath,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
+                // 'connection_count' => self::$connectionCount // Removed
             ]);
             
             throw new Exceptions\DatabaseException("Database connection failed: " . $e->getMessage());

@@ -8,46 +8,33 @@
 // Load bootstrap
 $bootstrap = require_once(__DIR__ . '/../core/bootstrap.php');
 
-use Par2Protect\Core\Database;
-use Par2Protect\Core\Logger;
-use Par2Protect\Core\Config;
+// No need for use statements if getting from container
+// use Par2Protect\Core\Database;
+// use Par2Protect\Core\Logger;
+// use Par2Protect\Core\Config;
 
-// Get components
-$logger = Logger::getInstance();
-$db = Database::getInstance();
-$config = Config::getInstance();
+// Get components from container
+$container = get_container();
+$logger = $container->get('logger');
+$db = $container->get('database');
+$config = $container->get('config');
 
-// Function to log to both the logger and stdout
-function log_message($message, $level = 'INFO') {
-    global $logger;
-    
-    // Log to the logger
-    if ($level === 'INFO') {
-        $logger->info($message);
-    } elseif ($level === 'ERROR') {
-        $logger->error($message);
-    } elseif ($level === 'WARNING') {
-        $logger->warning($message);
-    } elseif ($level === 'DEBUG') {
-        $logger->debug($message);
-    }
-    
-    // Also output to stdout for the script to capture
-    echo date('[Y-m-d H:i:s]') . " $level: $message\n";
-}
+// Enable console output for this script
+$logger->enableStdoutLogging(true);
 
-log_message("Starting database initialization");
+
+$logger->info("Starting database initialization");
 
 // Get database path
 $dbPath = $config->get('database.path', '/boot/config/plugins/par2protect/par2protect.db');
-log_message("Using database at: $dbPath");
+$logger->info("Using database at: $dbPath");
 
 // Check if database file exists
 $dbExists = file_exists($dbPath);
 if ($dbExists) {
-    log_message("Database file already exists");
+    $logger->info("Database file already exists");
 } else {
-    log_message("Database file does not exist, will be created");
+    $logger->info("Database file does not exist, will be created");
 }
 
 // Create tables
@@ -56,7 +43,7 @@ try {
     $db->beginTransaction();
     
     // Create protected_items table
-    log_message("Creating protected_items table");
+    $logger->info("Creating protected_items table");
     $db->query("
         CREATE TABLE IF NOT EXISTS protected_items (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -80,14 +67,14 @@ try {
     ");
     
     // Create indexes for protected_items
-    log_message("Creating indexes for protected_items table");
+    $logger->info("Creating indexes for protected_items table");
     $db->query("CREATE INDEX IF NOT EXISTS idx_path ON protected_items(path)");
     $db->query("CREATE INDEX IF NOT EXISTS idx_last_verified ON protected_items(last_verified)");
     $db->query("CREATE INDEX IF NOT EXISTS idx_status ON protected_items(last_status)");
     $db->query("CREATE INDEX IF NOT EXISTS idx_parent_dir ON protected_items(parent_dir)");
     
     // Create verification_history table
-    log_message("Creating verification_history table");
+    $logger->info("Creating verification_history table");
     $db->query("
         CREATE TABLE IF NOT EXISTS verification_history (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -95,12 +82,12 @@ try {
             verification_date DATETIME NOT NULL,
             status TEXT NOT NULL,
             details TEXT,
-            FOREIGN KEY (protected_item_id) REFERENCES protected_items(id)
+            FOREIGN KEY (protected_item_id) REFERENCES protected_items(id) ON DELETE CASCADE
         )
     ");
     
     // Create operation_queue table
-    log_message("Creating operation_queue table");
+    $logger->info("Creating operation_queue table");
     $db->query("
         CREATE TABLE IF NOT EXISTS operation_queue (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -117,12 +104,12 @@ try {
     ");
     
     // Create indexes for operation_queue
-    log_message("Creating indexes for operation_queue table");
+    $logger->info("Creating indexes for operation_queue table");
     $db->query("CREATE INDEX IF NOT EXISTS idx_queue_status ON operation_queue(status)");
     $db->query("CREATE INDEX IF NOT EXISTS idx_queue_type ON operation_queue(operation_type)");
     
     // Create file_metadata table
-    log_message("Creating file_metadata table");
+    $logger->info("Creating file_metadata table");
     $db->query("
         CREATE TABLE IF NOT EXISTS file_metadata (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -131,6 +118,7 @@ try {
             owner TEXT NOT NULL,
             group_name TEXT NOT NULL,
             permissions TEXT NOT NULL,
+            mtime INTEGER,                         -- Added modification time
             extended_attributes TEXT,
             created_at DATETIME DEFAULT (datetime('now', 'localtime')),
             FOREIGN KEY (protected_item_id) REFERENCES protected_items(id) ON DELETE CASCADE,
@@ -139,29 +127,50 @@ try {
     ");
     
     // Create indexes for file_metadata
-    log_message("Creating indexes for file_metadata table");
+    $logger->info("Creating indexes for file_metadata table");
     $db->query("CREATE INDEX IF NOT EXISTS idx_file_metadata_protected_item_id ON file_metadata(protected_item_id)");
     $db->query("CREATE INDEX IF NOT EXISTS idx_file_metadata_file_path ON file_metadata(file_path)");
+
+    // --- Add Schema Migration for mtime column ---
+    $logger->info("Checking file_metadata schema for mtime column...");
+    $columnsResult = $db->query("PRAGMA table_info(file_metadata)");
+    $hasMtimeColumn = false;
+    // Use fetchArray(SQLITE3_ASSOC) on the result object
+    while ($column = $columnsResult->fetchArray(SQLITE3_ASSOC)) {
+        if (isset($column['name']) && $column['name'] === 'mtime') {
+            $hasMtimeColumn = true;
+            break;
+        }
+    }
+
+    if (!$hasMtimeColumn) {
+        $logger->info("Adding mtime column to file_metadata table...");
+        $db->query("ALTER TABLE file_metadata ADD COLUMN mtime INTEGER");
+        $logger->info("mtime column added.");
+    } else {
+        $logger->info("mtime column already exists.");
+    }
+    // --- End Schema Migration ---
     
     // Commit transaction
     $db->commit();
     
-    log_message("Database tables created successfully");
+    $logger->info("Database tables created successfully");
 } catch (Exception $e) {
     // Rollback transaction on error
     if ($db->inTransaction) {
         $db->rollback();
     }
     
-    log_message("Error creating database tables: " . $e->getMessage(), 'ERROR');
+    $logger->error("Error creating database tables: " . $e->getMessage());
     exit(1);
 }
 
 // Migrate data from old database if it exists
 $oldDbPath = '/boot/config/plugins/par2protect/par2protect_old.db';
 if (file_exists($oldDbPath)) {
-    log_message("Found old database at: $oldDbPath");
-    log_message("Attempting to migrate data from old database");
+    $logger->info("Found old database at: $oldDbPath");
+    $logger->info("Attempting to migrate data from old database");
     
     try {
         // Connect to old database
@@ -172,7 +181,7 @@ if (file_exists($oldDbPath)) {
         $hasProtectedFiles = $result->fetchArray() !== false;
         
         if ($hasProtectedFiles) {
-            log_message("Found protected_files table in old database");
+            $logger->info("Found protected_files table in old database");
             
             // Begin transaction
             $db->beginTransaction();
@@ -193,7 +202,7 @@ if (file_exists($oldDbPath)) {
                 $par2Path = $row['par2_path'] ?? '';
                 
                 if (empty($path) || empty($par2Path)) {
-                    log_message("Skipping invalid record: " . json_encode($row), 'WARNING');
+                    $logger->warning("Skipping invalid record: " . json_encode($row));
                     continue;
                 }
                 
@@ -222,9 +231,9 @@ if (file_exists($oldDbPath)) {
             // Commit transaction
             $db->commit();
             
-            log_message("Migrated $count protected files from old database");
+            $logger->info("Migrated $count protected files from old database");
         } else {
-            log_message("No protected_files table found in old database", 'WARNING');
+            $logger->warning("No protected_files table found in old database");
         }
         
         // Close old database
@@ -235,8 +244,8 @@ if (file_exists($oldDbPath)) {
             $db->rollback();
         }
         
-        log_message("Error migrating data from old database: " . $e->getMessage(), 'ERROR');
+        $logger->error("Error migrating data from old database: " . $e->getMessage());
     }
 }
 
-log_message("Database initialization completed successfully");
+$logger->info("Database initialization completed successfully");

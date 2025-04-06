@@ -3,626 +3,290 @@ namespace Par2Protect\Services\Protection;
 
 use Par2Protect\Core\Logger;
 use Par2Protect\Core\Config;
-use Par2Protect\Core\Exceptions\ApiException;
+use Par2Protect\Core\EventSystem;
+use Par2Protect\Core\Exceptions\Par2ExecutionException;
 use Par2Protect\Services\Protection\Helpers\FormatHelper;
+use Par2Protect\Core\Commands\Par2CreateCommandBuilder;
+use Par2Protect\Core\Traits\ReadsFileSystemMetadata; // Added trait
 
 /**
- * Operations class for handling protection operations
+ * Handles protection operations using par2 commands
  */
 class ProtectionOperations {
+    use ReadsFileSystemMetadata; // Use the trait
+
     private $logger;
     private $config;
     private $formatHelper;
-    
+    private $eventSystem;
+    private $createBuilder;
+
     /**
      * ProtectionOperations constructor
-     *
-     * @param Logger $logger Logger instance
-     * @param Config $config Config instance
-     * @param FormatHelper $formatHelper Format helper instance
      */
-    public function __construct(Logger $logger, Config $config, FormatHelper $formatHelper) {
+    public function __construct(
+        Logger $logger,
+        Config $config,
+        FormatHelper $formatHelper,
+        EventSystem $eventSystem,
+        Par2CreateCommandBuilder $createBuilder
+    ) {
         $this->logger = $logger;
         $this->config = $config;
         $this->formatHelper = $formatHelper;
+        $this->eventSystem = $eventSystem;
+        $this->createBuilder = $createBuilder;
     }
-    
+
     /**
-     * Create PAR2 files for a path
-     *
-     * @param string $path Path to protect
-     * @param int $redundancy Redundancy percentage
-     * @param string $mode Protection mode (file or directory)
-     * @param array $fileTypes File types to protect (for directory mode)
-     * @param array $fileCategories File categories selected by the user
-     * @param string $customParityDir Custom parity directory
-     * @param array $advancedSettings Advanced settings for par2 command
-     * @return array
+     * Create PAR2 files for a given path (file or directory).
+     * Handles different modes and file type filtering.
      */
-    public function createPar2Files($path, $redundancy, $mode, $fileTypes = null, $fileCategories = null, $customParityDir = null, $advancedSettings = null) {
-        // Add diagnostic logging for file types
-        $operationId = uniqid('par2_');
-        if ($mode === 'directory' && $fileTypes && !empty($fileTypes)) {
-            $this->logger->debug("Creating par2 files with file type filtering", [
-                'path' => $path,
-                'file_types' => json_encode($fileTypes),
-                'file_categories' => is_array($fileCategories) ? json_encode($fileCategories) : $fileCategories,
-                'advanced_settings' => $advancedSettings ? json_encode($advancedSettings) : null
-            ]);
+    public function createPar2Files(
+        string $path,
+        int $redundancy,
+        string $mode,
+        ?array $fileTypes = null,
+        ?string $customParityDir = null,
+        ?array $protectedFiles = null, // Not used here, handled by protectIndividualFiles
+        ?array $advancedSettings = null
+    ): string {
+        $this->logger->debug("Starting createPar2Files", compact('path', 'mode', 'redundancy', 'fileTypes', 'customParityDir', 'advancedSettings'));
+
+        $basePath = ($mode === 'directory') ? $path : dirname($path);
+        $par2BaseName = ($mode === 'directory') ? basename($path) : basename($path, '.' . pathinfo($path, PATHINFO_EXTENSION));
+        if (empty($par2BaseName)) $par2BaseName = 'protection';
+
+        $parityDir = $this->determineParityDirectory($path, $mode, $customParityDir, $fileTypes);
+        $par2Path = rtrim($parityDir, '/') . '/' . $par2BaseName . '.par2';
+
+        $this->ensureDirectoryExists($parityDir);
+
+        $this->createBuilder
+            ->setBasePath($basePath)
+            ->setParityPath($par2Path)
+            ->setRedundancy($redundancy)
+            ->setQuiet(true);
+
+        if ($advancedSettings) { $this->applyAdvancedSettings($this->createBuilder, $advancedSettings); }
+
+        if ($mode === 'file') {
+            $this->createBuilder->addSourceFile($path);
+            return $this->executePar2Command($this->createBuilder->buildCommandString(), [$path]);
+        } elseif ($mode === 'directory') {
+            $sourceFiles = $this->findSourceFiles($path, $fileTypes, $parityDir);
+            if (empty($sourceFiles)) { throw new \Exception("No files found to protect in directory matching criteria: $path"); }
+            return $this->executeMultiplePar2Commands($this->createBuilder, $sourceFiles, $par2Path);
+        } else {
+            throw new \InvalidArgumentException("Invalid protection mode specified: $mode");
         }
-        
-        // If a custom parity directory is provided, use it
-        if ($customParityDir !== null) {
-            $parityDir = $customParityDir;
-            $this->logger->debug("Using custom parity directory", ['parity_dir' => $parityDir]);
+    }
+
+     /** Protect individual files based on categories/types within a directory. */
+     public function protectIndividualFiles(string $path, int $redundancy, ?array $fileTypes = null, ?array $fileCategories = null, ?array $advancedSettings = null): array
+     {
+         $this->logger->debug("Starting protectIndividualFiles", compact('path', 'redundancy', 'fileTypes', 'fileCategories', 'advancedSettings'));
+         $allProtectedFiles = []; $errors = [];
+
+         $targetExtensions = $this->formatHelper->getTargetExtensions($fileTypes, $fileCategories);
+         if (empty($targetExtensions)) { return ['success' => false, 'protected_files' => [], 'error' => 'No file types selected for protection.']; }
+
+         $fileCategoryName = $this->formatHelper->getFileCategoryName($fileCategories ?: $fileTypes);
+         $parityDirBase = $this->config->get('protection.parity_dir', '.parity');
+         $parityDir = rtrim($path, '/') . '/' . $parityDirBase . ($fileCategoryName ? '-' . $fileCategoryName : '');
+         $this->ensureDirectoryExists($parityDir);
+
+         $filesToProtect = $this->findSourceFiles($path, $targetExtensions, $parityDir);
+         if (empty($filesToProtect)) { return ['success' => true, 'protected_files' => [], 'error' => null]; }
+
+         foreach ($filesToProtect as $filePath) {
+             try {
+                 $par2BaseName = basename($filePath);
+                 $par2Path = rtrim($parityDir, '/') . '/' . $par2BaseName . '.par2';
+                 $this->createBuilder->reset();
+                 $this->createBuilder
+                     ->setBasePath(dirname($filePath))
+                     ->setParityPath($par2Path)
+                     ->setRedundancy($redundancy)
+                     ->setQuiet(true)
+                     ->addSourceFile($filePath);
+                 if ($advancedSettings) { $this->applyAdvancedSettings($this->createBuilder, $advancedSettings); }
+                 $this->executePar2Command($this->createBuilder->buildCommandString(), [$filePath]);
+                 $allProtectedFiles[] = $filePath;
+             } catch (\Exception $e) {
+                 $this->logger->error("Failed to protect individual file", ['file' => $filePath, 'error' => $e->getMessage()]);
+                 $errors[] = basename($filePath) . ": " . $e->getMessage();
+             }
+         }
+         return ['success' => count($errors) === 0, 'protected_files' => $allProtectedFiles, 'error' => count($errors) > 0 ? implode("\n", $errors) : null];
+     }
+
+    /** Apply advanced settings to the command builder */
+    private function applyAdvancedSettings(Par2CreateCommandBuilder $builder, array $settings) {
+        if (isset($settings['block_count']) && !empty($settings['block_count'])) { $builder->setBlockCount(intval($settings['block_count'])); }
+        if (isset($settings['block_size']) && !empty($settings['block_size'])) { $builder->setBlockSize(intval($settings['block_size'])); }
+        if (isset($settings['target_size']) && !empty($settings['target_size'])) { $builder->setMemoryLimit(intval($settings['target_size'])); } // Assuming target_size is memory limit
+        if (isset($settings['recovery_files']) && !empty($settings['recovery_files'])) { $builder->setRecoveryFileCount(intval($settings['recovery_files'])); }
+    }
+
+    /** Find source files in a directory, optionally filtering by extensions */
+    private function findSourceFiles(string $dirPath, ?array $extensions, string $excludeDir): array {
+        $dirPath = rtrim($dirPath, '/') . '/';
+        $excludeDir = rtrim($excludeDir, '/');
+        $files = [];
+        $command = "/usr/bin/find " . escapeshellarg($dirPath) . " -type d -path " . escapeshellarg($excludeDir) . " -prune -o -type f";
+        if (!empty($extensions)) {
+            $nameFilters = [];
+            foreach ($extensions as $ext) { $safeExt = escapeshellarg('.' . ltrim($ext, '.')); $nameFilters[] = "-iname '*$safeExt'"; }
+            $command .= " \( " . implode(' -o ', $nameFilters) . " \)";
         }
-        // Otherwise determine parity directory name based on mode and file types
+        $command .= " -print0";
+        $this->logger->debug("Executing find command to get file list", ['command' => $command]);
+        exec($command, $output, $returnCode);
+        if ($returnCode !== 0) { $this->logger->error("Find command failed", ['command' => $command, 'return_code' => $returnCode]); throw new \RuntimeException("Failed to list files in directory: $dirPath"); }
+        $outputStr = implode("", $output);
+        if (!empty($outputStr)) { $files = explode("\0", rtrim($outputStr, "\0")); }
+        $this->logger->debug("Found files to protect", ['file_count' => count($files), 'file_types' => $extensions]);
+        return $files;
+    }
+
+    /** Execute multiple PAR2 commands using xargs for efficiency */
+    private function executeMultiplePar2Commands(Par2CreateCommandBuilder $builder, array $sourceFiles, string $par2Path): string {
+        $tempDir = '/tmp/par2protect/xargs_file_lists';
+        $this->ensureDirectoryExists($tempDir);
+        $cleanupCommand = "/usr/bin/find " . escapeshellarg($tempDir) . " -name 'par2_files_*.txt' -type f -mtime +1 -delete";
+        exec($cleanupCommand, $cleanupOutput, $cleanupReturnCode);
+        if ($cleanupReturnCode !== 0) { $this->logger->warning("Failed to clean up old xargs file lists", ['command' => $cleanupCommand]); }
+        $timestamp = date('Ymd_His'); $random = substr(md5(uniqid(rand(), true)), 0, 10);
+        $tempFile = $tempDir . '/par2_files_' . $timestamp . '_' . $random . '.txt';
+        $fileListContent = implode("\0", $sourceFiles);
+        if (file_put_contents($tempFile, $fileListContent) === false) { throw new \RuntimeException("Failed to write temporary file list: $tempFile"); }
+        $this->logger->debug("Created temporary file list for xargs", ['file' => $tempFile]);
+        $baseCommandWithOptions = $builder->buildCommandString(false);
+        $xargs_cmd = '/usr/bin/xargs -0';
+        $command = "/bin/cat " . escapeshellarg($tempFile) . " | " . $xargs_cmd . " " . $baseCommandWithOptions . " --";
+        $this->logger->debug("Executing par2 command using xargs for directory", ['command' => $command, 'file_count' => count($sourceFiles)]);
+        try {
+            $this->executePar2Command($command, $sourceFiles);
+            // @unlink($tempFile); // Keep temp file for potential debugging
+            return $par2Path;
+        } catch (\Exception $e) { $this->logger->error("xargs par2 command failed, keeping temp file for debugging.", ['file' => $tempFile]); throw $e; }
+    }
+
+    /** Execute a single PAR2 command */
+    private function executePar2Command(string $command, array $involvedFiles = []): string {
+         $this->logger->debug("Executing final PAR2 command", ['command' => $command]);
+         $output = []; $returnCode = 0;
+         exec($command . ' 2>&1', $output, $returnCode);
+         $outputStr = implode("\n", $output);
+
+         if (strpos($outputStr, 'Repair is not required') !== false || strpos($outputStr, 'All files are correct') !== false) {
+             $this->logger->info("PAR2 verification successful", ['command' => $command]);
+             return $this->createBuilder->getParityPath() ?? '';
+         }
+         if (strpos($outputStr, 'par2 files already exist') !== false && strpos($command, 'create') !== false) {
+              $this->logger->info("PAR2 files already exist, skipping creation.", ['command' => $command]);
+              // Throw specific exception instead of returning normally
+              throw new \Par2Protect\Core\Exceptions\Par2FilesExistException("PAR2 files already exist for command: " . $command);
+         }
+         if ($returnCode !== 0) {
+             $this->logger->error("Par2 command failed", ['command' => $command, 'return_code' => $returnCode, 'output' => $outputStr]);
+             $this->eventSystem->addEvent('par2.error', ['command' => $command, 'return_code' => $returnCode, 'output' => $outputStr, 'files' => $involvedFiles]);
+             throw new Par2ExecutionException("Par2 command failed", $command, $returnCode, $outputStr);
+         }
+         $this->logger->debug("Par2 command executed successfully", ['command' => $command, 'file_count' => count($involvedFiles)]);
+         $this->eventSystem->addEvent('par2.success', ['command' => $command, 'files' => $involvedFiles]);
+         return $this->createBuilder->getParityPath() ?? '';
+    }
+
+    /**
+     * Remove PAR2 files associated with a protected item.
+     */
+    public function removePar2Files(string $par2Path, string $mode): bool
+    {
+        $this->logger->debug("Attempting to remove PAR2 files", compact('par2Path', 'mode'));
+        $success = true;
+        try {
+            if (strpos($mode, 'Individual Files') === 0 && is_dir($par2Path)) {
+                $this->logger->debug("Removing individual PAR2 files directory", ['directory' => $par2Path]);
+                if (file_exists($par2Path)) {
+                    $command = "rm -rf " . escapeshellarg($par2Path);
+                    exec($command, $output, $returnCode);
+                    if ($returnCode !== 0) { $this->logger->error("Failed to remove PAR2 directory", ['directory' => $par2Path, 'return_code' => $returnCode, 'output' => implode("\n", $output)]); $success = false; }
+                    else { $this->logger->info("Successfully removed PAR2 directory", ['directory' => $par2Path]); }
+                } else { $this->logger->warning("PAR2 directory not found, nothing to remove.", ['directory' => $par2Path]); }
+            } elseif (is_file($par2Path)) {
+                // For standard file/directory protection, remove the entire .parity directory using find -delete
+                $parityDirToRemove = dirname($par2Path);
+                $this->logger->debug("Attempting to remove PAR2 directory using find -delete", ['directory' => $parityDirToRemove]);
+                // Safety check: Ensure we are targeting a directory that looks like a parity directory
+                $parityDirBaseName = $this->config->get('protection.parity_dir', '.parity');
+                if (basename($parityDirToRemove) === $parityDirBaseName || strpos($parityDirToRemove, '/' . $parityDirBaseName . '-') !== false) {
+                    if (is_dir($parityDirToRemove)) {
+                        // Construct the find command: find 'directory' -depth -delete
+                        // -depth ensures files/subdirs are deleted before the parent
+                        $command = "/usr/bin/find " . escapeshellarg($parityDirToRemove) . " -depth -delete";
+                        $this->logger->debug("Executing find -delete command", ['command' => $command]);
+                        exec($command, $output, $returnCode);
+                        $this->logger->debug("Find -delete command finished", ['command' => $command, 'return_code' => $returnCode, 'output' => implode("\n", $output)]);
+                        // Check if the directory still exists after the command
+                        clearstatcache(true, $parityDirToRemove); // Clear stat cache before checking
+                        if (is_dir($parityDirToRemove)) {
+                             // If find reported success (0) but dir still exists, log error
+                             if ($returnCode === 0) {
+                                 $this->logger->error("Find -delete reported success but directory still exists", ['directory' => $parityDirToRemove]);
+                                 $success = false;
+                             } else {
+                                 $this->logger->error("Failed to remove PAR2 directory using find -delete", ['directory' => $parityDirToRemove, 'return_code' => $returnCode, 'output' => implode("\n", $output)]);
+                                 $success = false;
+                             }
+                        } else {
+                             // Directory is gone, consider it success regardless of find's return code (sometimes find returns non-zero even on success with -delete)
+                             $this->logger->info("Successfully removed PAR2 directory using find -delete", ['directory' => $parityDirToRemove]);
+                             $success = true;
+                        }
+                    } else {
+                         $this->logger->warning("Parity directory to remove does not exist", ['directory' => $parityDirToRemove]);
+                         $success = true; // Directory doesn't exist, so removal is effectively successful
+                    }
+                } else {
+                     $this->logger->error("Safety check failed: Attempted find -delete on directory not matching expected parity structure", ['directory' => $parityDirToRemove, 'par2Path' => $par2Path]);
+                     $success = false;
+                }
+            } else {
+                $this->logger->warning("PAR2 path not found or invalid mode for removal", compact('par2Path', 'mode'));
+                $success = false;
+            }
+        } catch (\Exception $e) { $this->logger->error("Error removing PAR2 files", ['path' => $par2Path, 'error' => $e->getMessage()]); $success = false; }
+        return $success;
+    }
+
+    /** Ensure a directory exists */
+    private function ensureDirectoryExists(string $dirPath): void {
+        if (!is_dir($dirPath)) {
+            $this->logger->debug("Directory does not exist, attempting creation", ['path' => $dirPath]);
+            if (!@mkdir($dirPath, 0755, true)) {
+                $error = error_get_last(); $errorMsg = $error['message'] ?? 'Unknown error';
+                $this->logger->error("Failed to create directory", ['path' => $dirPath, 'error' => $errorMsg]);
+                throw new \RuntimeException("Failed to create directory: $dirPath - $errorMsg");
+            }
+            $this->logger->debug("Created directory", ['path' => $dirPath]);
+        }
+    }
+
+    /** Determine the correct parity directory path */
+    private function determineParityDirectory(string $path, string $mode, ?string $customParityDir, ?array $fileTypes): string {
+        if ($customParityDir) { return $customParityDir; }
         $parityDirBase = $this->config->get('protection.parity_dir', '.parity');
-        
-        // For individual files with specific file types, use category-specific parity directory
-        if ($mode === 'file' && $fileTypes && !empty($fileTypes)) {
-            // Get the file category name
-            $fileCategory = '';
-            
-            // Use provided categories if available
-            if (isset($fileCategories) && is_array($fileCategories) && !empty($fileCategories)) {
-                $fileCategory = implode('-', $fileCategories);
-                $this->logger->debug("DIAGNOSTIC: Using provided categories for folder name in createPar2Files", [
-                    'file_categories' => json_encode($fileCategories),
-                    'category_name' => $fileCategory
-                ]);
-            } else {
-                // Fall back to determining category from file types
-                $fileCategory = $this->formatHelper->getFileCategoryName($fileTypes);
-                $this->logger->debug("DIAGNOSTIC: Determined category from file types in createPar2Files", [
-                    'file_types' => json_encode($fileTypes),
-                    'category_name' => $fileCategory
-                ]);
-            }
-            
-            $parityDir = dirname($path) . '/' . $parityDirBase . '-' . $fileCategory;
-            
-            $this->logger->debug("Using category-specific parity directory for individual file", [
-                'path' => $path,
-                'file_types' => json_encode($fileTypes),
-                'category' => $fileCategory,
-                'parity_dir' => $parityDir
-            ]);
-        } else if ($mode === 'directory' && $fileTypes && !empty($fileTypes)) {
-            // For directories with specific file types, use category-specific parity directory
-            // Get the file category name
-            $fileCategory = '';
-            
-            // Use provided categories if available
-            if (isset($fileCategories) && is_array($fileCategories) && !empty($fileCategories)) {
-                $fileCategory = implode('-', $fileCategories);
-                $this->logger->debug("DIAGNOSTIC: Using provided categories for folder name in createPar2Files", [
-                    'file_categories' => json_encode($fileCategories),
-                    'category_name' => $fileCategory
-                ]);
-            } else {
-                // Fall back to determining category from file types
-                $fileCategory = $this->formatHelper->getFileCategoryName($fileTypes);
-                $this->logger->debug("DIAGNOSTIC: Determined category from file types in createPar2Files", [
-                    'file_types' => json_encode($fileTypes),
-                    'category_name' => $fileCategory
-                ]);
-            }
-            
-            $parityDir = $path . '/' . $parityDirBase . '-' . $fileCategory;
-            
-            $this->logger->debug("Using category-specific parity directory for directory with file types", [
-                'path' => $path,
-                'file_types' => json_encode($fileTypes),
-                'category' => $fileCategory,
-                'parity_dir' => $parityDir
-            ]);
-        } else {
-            // For directories without file types or files without file types, use default parity directory
-            $parityDir = $mode === 'directory' ? $path . '/' . $parityDirBase : dirname($path) . '/' . $parityDirBase;
-            
-            $this->logger->debug("Using default parity directory", [
-                'path' => $path,
-                'mode' => $mode,
-                'parity_dir' => $parityDir
-            ]);
+        $parentDir = ($mode === 'directory') ? $path : dirname($path);
+        $subDir = '';
+        if ($mode === 'directory' && $fileTypes) {
+            $subDir = $this->formatHelper->getFileCategoryName($fileTypes);
+            if (!empty($subDir)) { $subDir = '-' . $subDir; }
         }
-        
-        // Create parity directory if it doesn't exist
-        if (!file_exists($parityDir)) {
-            if (!mkdir($parityDir, 0755, true)) {
-                throw new ApiException("Failed to create parity directory: $parityDir");
-            }
-        }
-        
-        // Determine par2 file name
-        $par2BaseName = $mode === 'directory' ? basename($path) : basename($path);
-        $par2Path = $parityDir . '/' . $par2BaseName . '.par2';
-        
-        // Build par2 command
-        $baseCommand = "par2 create -q";
-        
-        // Add redundancy parameter
-        $baseCommand .= " -r$redundancy";
-        
-        // Add resource limit parameters
-        // Add -t parameter for CPU threads if set
-        $maxCpuThreads = $this->config->get('resource_limits.max_cpu_usage');
-        if ($maxCpuThreads) {
-            $baseCommand .= " -t$maxCpuThreads";
-        }
-        
-        // Add -m parameter for memory usage if set
-        $maxMemory = $this->config->get('resource_limits.max_memory_usage');
-        if ($maxMemory) {
-            $baseCommand .= " -m$maxMemory";
-        }
-        
-        // Add -T parameter for parallel file hashing if set
-        $parallelFileHashing = $this->config->get('resource_limits.parallel_file_hashing');
-        if ($parallelFileHashing) {
-            $baseCommand .= " -T$parallelFileHashing";
-        }
-        
-        // Add advanced settings if provided
-        if ($advancedSettings && is_array($advancedSettings)) {
-            // Add block count if provided
-            if (isset($advancedSettings['block_count']) && $advancedSettings['block_count']) {
-                $baseCommand .= " -c" . intval($advancedSettings['block_count']);
-            }
-            
-            // Add block size if provided
-            if (isset($advancedSettings['block_size']) && $advancedSettings['block_size']) {
-                $baseCommand .= " -s" . intval($advancedSettings['block_size']);
-            }
-            
-            // Add recovery file count if provided
-            if (isset($advancedSettings['recovery_file_count']) && $advancedSettings['recovery_file_count']) {
-                $baseCommand .= " -n" . intval($advancedSettings['recovery_file_count']);
-            }
-            
-            // Add recovery file size if provided
-            if (isset($advancedSettings['recovery_file_size']) && $advancedSettings['recovery_file_size']) {
-                $baseCommand .= " -s" . intval($advancedSettings['recovery_file_size']) . "k";
-            }
-            
-            // Add first recovery file number if provided
-            if (isset($advancedSettings['first_recovery_number']) && $advancedSettings['first_recovery_number']) {
-                $baseCommand .= " -f" . intval($advancedSettings['first_recovery_number']);
-            }
-            
-            // Add uniform file size if provided
-            if (isset($advancedSettings['uniform_file_size']) && $advancedSettings['uniform_file_size']) {
-                $baseCommand .= " -u";
-            }
-        }
-        
-        // Apply I/O priority if set
-        $ioPriority = $this->config->get('resource_limits.io_priority');
-        if ($ioPriority) {
-            // Map priority levels to ionice classes
-            $ioniceClass = 2; // Default to best-effort class
-            $ioniceLevel = 4; // Default to normal priority (range 0-7)
-            
-            if ($ioPriority === 'high') {
-                $ioniceLevel = 0; // Highest priority in best-effort class
-            } elseif ($ioPriority === 'normal') {
-                $ioniceLevel = 4; // Normal priority
-            } elseif ($ioPriority === 'low') {
-                $ioniceLevel = 7; // Lowest priority
-            }
-            
-            // Prepend ionice command to set I/O priority
-            $baseCommand = "ionice -c $ioniceClass -n $ioniceLevel " . $baseCommand;
-        }
-        
-        // Add output file parameter
-        $baseCommand .= " \"$par2Path\"";
-        
-        // Execute par2 command based on mode
-        if ($mode === 'directory') {
-            // For directories, we need to handle file type filtering
-            if ($fileTypes && !empty($fileTypes)) {
-                // Build find command to get files of specified types
-                $findCommand = "find \"$path\" -type f";
-                
-                // Add file type filters
-                $typeFilters = [];
-                foreach ($fileTypes as $type) {
-                    $typeFilters[] = "-name \"*.$type\"";
-                }
-                
-                $findCommand .= " \\( " . implode(" -o ", $typeFilters) . " \\)";
-                
-                // Execute find command to get file count
-                $this->logger->debug("Executing find command to get file count", [
-                    'command' => $findCommand
-                ]);
-                
-                exec($findCommand . " | wc -l", $fileCountOutput);
-                $fileCount = intval(trim($fileCountOutput[0]));
-                
-                $this->logger->debug("Found files to protect", [
-                    'file_count' => $fileCount,
-                    'file_types' => json_encode($fileTypes)
-                ]);
-                
-                if ($fileCount === 0) {
-                    $this->logger->warning("No files found matching the specified file types", [
-                        'path' => $path,
-                        'file_types' => json_encode($fileTypes)
-                    ]);
-                    
-                    return [
-                        'success' => false,
-                        'skipped' => true,
-                        'error' => "No files found matching the specified file types",
-                        'par2_path' => null
-                    ];
-                }
-                
-                // Execute multiple par2 commands if needed
-                return $this->executeMultiplePar2Commands($path, $baseCommand, $par2Path, $findCommand, $fileCount);
-            } else {
-                // For directories without file type filtering, protect all files
-                $command = $baseCommand . " \"$path\"";
-                
-                $this->logger->debug("Executing par2 command for directory", [
-                    'command' => $command
-                ]);
-                
-                $result = $this->executePar2Command($command);
-                
-                if ($result['success']) {
-                    return [
-                        'success' => true,
-                        'par2_path' => $par2Path
-                    ];
-                } else {
-                    return [
-                        'success' => false,
-                        'error' => $result['error'],
-                        'par2_path' => null
-                    ];
-                }
-            }
-        } else {
-            // For individual files, protect the file directly
-            $command = $baseCommand . " \"$path\"";
-            
-            $this->logger->debug("Executing par2 command for file", [
-                'command' => $command
-            ]);
-            
-            $result = $this->executePar2Command($command);
-            
-            if ($result['success']) {
-                return [
-                    'success' => true,
-                    'par2_path' => $par2Path
-                ];
-            } else {
-                return [
-                    'success' => false,
-                    'error' => $result['error'],
-                    'par2_path' => null
-                ];
-            }
-        }
+        $parityDir = rtrim($parentDir, '/') . '/' . $parityDirBase . $subDir;
+        $this->logger->debug("Determined parity directory path", ['path' => $path, 'mode' => $mode, 'parity_dir' => $parityDir]);
+        return $parityDir;
     }
-    
-    /**
-     * Execute multiple PAR2 commands for large directories
-     *
-     * @param string $path Path to protect
-     * @param string $baseCommand Base PAR2 command
-     * @param string $par2Path Path to PAR2 file
-     * @param string $findCommand Find command to get files
-     * @param int $fileCount Number of files to protect
-     * @return array
-     */
-    public function executeMultiplePar2Commands($path, $baseCommand, $par2Path, $findCommand, $fileCount) {
-        // Determine batch size based on file count
-        $batchSize = 1000; // Default batch size
-        
-        // If file count is small, protect all files at once
-        if ($fileCount <= $batchSize) {
-            // Execute find command to get files
-            exec($findCommand, $files);
-            
-            // Build command with file list
-            $command = $baseCommand;
-            foreach ($files as $file) {
-                $command .= " \"$file\"";
-            }
-            
-            $this->logger->debug("Executing par2 command for directory with file type filtering", [
-                'command' => $command,
-                'file_count' => count($files)
-            ]);
-            
-            $result = $this->executePar2Command($command, $files);
-            
-            if ($result['success']) {
-                return [
-                    'success' => true,
-                    'par2_path' => $par2Path
-                ];
-            } else {
-                return [
-                    'success' => false,
-                    'error' => $result['error'],
-                    'par2_path' => null
-                ];
-            }
-        } else {
-            // For large directories, split into batches
-            $this->logger->debug("Splitting large directory into batches", [
-                'file_count' => $fileCount,
-                'batch_size' => $batchSize
-            ]);
-            
-            // Create a temporary directory for batch files
-            $tempDir = sys_get_temp_dir() . '/par2protect_' . uniqid();
-            if (!mkdir($tempDir, 0755, true)) {
-                throw new ApiException("Failed to create temporary directory: $tempDir");
-            }
-            
-            // Execute find command to get all files
-            exec($findCommand, $allFiles);
-            
-            // Split files into batches
-            $batches = array_chunk($allFiles, $batchSize);
-            
-            $this->logger->debug("Split files into batches", [
-                'batch_count' => count($batches)
-            ]);
-            
-            // Process each batch
-            $batchResults = [];
-            $batchNumber = 1;
-            
-            foreach ($batches as $batch) {
-                $batchPar2Path = dirname($par2Path) . '/' . basename($par2Path, '.par2') . "_batch$batchNumber.par2";
-                
-                // Build command with file list
-                $command = str_replace($par2Path, $batchPar2Path, $baseCommand);
-                foreach ($batch as $file) {
-                    $command .= " \"$file\"";
-                }
-                
-                $this->logger->debug("Executing par2 command for batch", [
-                    'batch_number' => $batchNumber,
-                    'file_count' => count($batch),
-                    'par2_path' => $batchPar2Path
-                ]);
-                
-                $result = $this->executePar2Command($command, $batch);
-                
-                $batchResults[] = [
-                    'batch_number' => $batchNumber,
-                    'success' => $result['success'],
-                    'error' => $result['success'] ? null : $result['error'],
-                    'par2_path' => $result['success'] ? $batchPar2Path : null
-                ];
-                
-                $batchNumber++;
-            }
-            
-            // Clean up temporary directory
-            rmdir($tempDir);
-            
-            // Check if all batches succeeded
-            $allSucceeded = true;
-            $errors = [];
-            
-            foreach ($batchResults as $result) {
-                if (!$result['success']) {
-                    $allSucceeded = false;
-                    $errors[] = "Batch {$result['batch_number']}: {$result['error']}";
-                }
-            }
-            
-            if ($allSucceeded) {
-                return [
-                    'success' => true,
-                    'par2_path' => dirname($par2Path) // Return the directory containing all batch files
-                ];
-            } else {
-                return [
-                    'success' => false,
-                    'error' => "Failed to protect some batches: " . implode("; ", $errors),
-                    'par2_path' => null
-                ];
-            }
-        }
-    }
-    
-    /**
-     * Execute a PAR2 command
-     *
-     * @param string $command PAR2 command to execute
-     * @param array $files List of files being protected
-     * @return array
-     */
-    public function executePar2Command($command, $files = []) {
-        try {
-            // Execute command
-            exec($command . ' 2>&1', $output, $returnCode);
-            
-            // Check return code
-            if ($returnCode !== 0) {
-                $errorOutput = implode("\n", $output);
-                
-                $this->logger->error("Par2 command failed", [
-                    'command' => $command,
-                    'return_code' => $returnCode,
-                    'output' => $errorOutput
-                ]);
-                
-                return [
-                    'success' => false,
-                    'error' => "Par2 command failed: $errorOutput"
-                ];
-            }
-            
-            $this->logger->debug("Par2 command executed successfully", [
-                'command' => $command,
-                'file_count' => count($files)
-            ]);
-            
-            return [
-                'success' => true
-            ];
-        } catch (\Exception $e) {
-            $this->logger->error("Exception executing par2 command", [
-                'command' => $command,
-                'error' => $e->getMessage()
-            ]);
-            
-            return [
-                'success' => false,
-                'error' => "Exception executing par2 command: " . $e->getMessage()
-            ];
-        }
-    }
-    
-    /**
-     * Protect individual files in a directory
-     *
-     * @param string $dirPath Directory path
-     * @param int $redundancy Redundancy percentage
-     * @param array $fileTypes File types to protect
-     * @param array $fileCategories File categories selected by the user
-     * @param array $advancedSettings Advanced settings for par2 command
-     * @return array
-     */
-    public function protectIndividualFiles($dirPath, $redundancy, $fileTypes, $fileCategories = null, $advancedSettings = null) {
-        $this->logger->debug("Starting individual files protection", [
-            'dir_path' => $dirPath,
-            'file_types' => json_encode($fileTypes),
-            'file_categories' => $fileCategories ? json_encode($fileCategories) : null
-        ]);
-        
-        try {
-            // Build find command to get files of specified types
-            $findCommand = "find \"$dirPath\" -type f";
-            
-            // Add file type filters
-            $typeFilters = [];
-            foreach ($fileTypes as $type) {
-                $typeFilters[] = "-name \"*.$type\"";
-            }
-            
-            $findCommand .= " \\( " . implode(" -o ", $typeFilters) . " \\)";
-            
-            // Execute find command to get files
-            $this->logger->debug("Executing find command", [
-                'command' => $findCommand
-            ]);
-            
-            exec($findCommand, $files);
-            
-            $this->logger->debug("Found files to protect", [
-                'file_count' => count($files),
-                'file_types' => json_encode($fileTypes)
-            ]);
-            
-            if (count($files) === 0) {
-                $this->logger->warning("No files found matching the specified file types", [
-                    'dir_path' => $dirPath,
-                    'file_types' => json_encode($fileTypes)
-                ]);
-                
-                return [
-                    'success' => false,
-                    'skipped' => true,
-                    'error' => "No files found matching the specified file types",
-                    'protected_files' => []
-                ];
-            }
-            
-            // Get file category name
-            $fileCategory = '';
-            
-            // Use provided categories if available
-            if (isset($fileCategories) && is_array($fileCategories) && !empty($fileCategories)) {
-                $fileCategory = implode('-', $fileCategories);
-                $this->logger->debug("DIAGNOSTIC: Using provided categories for folder name in protectIndividualFiles", [
-                    'file_categories' => json_encode($fileCategories),
-                    'category_name' => $fileCategory
-                ]);
-            } else {
-                // Fall back to determining category from file types
-                $fileCategory = $this->formatHelper->getFileCategoryName($fileTypes);
-                $this->logger->debug("DIAGNOSTIC: Determined category from file types in protectIndividualFiles", [
-                    'file_types' => json_encode($fileTypes),
-                    'category_name' => $fileCategory
-                ]);
-            }
-            
-            // Create parity directory
-            $parityDirBase = $this->config->get('protection.parity_dir', '.parity');
-            $parityDir = $dirPath . '/' . $parityDirBase . '-' . $fileCategory;
-            
-            if (!file_exists($parityDir)) {
-                if (!mkdir($parityDir, 0755, true)) {
-                    throw new ApiException("Failed to create parity directory: $parityDir");
-                }
-            }
-            
-            $this->logger->debug("Using category-specific parity directory for individual files", [
-                'dir_path' => $dirPath,
-                'file_types' => json_encode($fileTypes),
-                'category' => $fileCategory,
-                'parity_dir' => $parityDir
-            ]);
-            
-            // Protect each file
-            $protectedFiles = [];
-            $failedFiles = [];
-            
-            foreach ($files as $file) {
-                $result = $this->createPar2Files($file, $redundancy, 'file', $fileTypes, $fileCategories, $parityDir, $advancedSettings);
-                
-                if ($result['success']) {
-                    $protectedFiles[] = $file;
-                } else {
-                    $failedFiles[] = [
-                        'file' => $file,
-                        'error' => $result['error']
-                    ];
-                }
-            }
-            
-            $this->logger->debug("Individual files protection completed", [
-                'protected_count' => count($protectedFiles),
-                'failed_count' => count($failedFiles)
-            ]);
-            
-            if (count($failedFiles) > 0) {
-                $this->logger->warning("Some files failed to protect", [
-                    'failed_files' => $failedFiles
-                ]);
-            }
-            
-            return [
-                'success' => count($protectedFiles) > 0,
-                'protected_files' => $protectedFiles,
-                'failed_files' => $failedFiles,
-                'par2_path' => $parityDir
-            ];
-        } catch (\Exception $e) {
-            $this->logger->error("Failed to protect individual files", [
-                'dir_path' => $dirPath,
-                'error' => $e->getMessage()
-            ]);
-            
-            return [
-                'success' => false,
-                'error' => "Failed to protect individual files: " . $e->getMessage(),
-                'protected_files' => []
-            ];
-        }
-    }
-}
+
+} // End of class ProtectionOperations

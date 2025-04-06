@@ -10,19 +10,28 @@ use Par2Protect\Core\Exceptions\DatabaseException;
  * It uses a separate SQLite database file stored in /tmp to prevent locking issues.
  */
 class QueueDatabase {
-    private static $instance = null;
+    // private static $instance = null; // Removed for DI
     private $db = null;
     private $inTransaction = false;
     private $logger;
     private $config;
     private $dbPath;
+    private $maxRetries = 5; // Default max retries
+    private $initialRetryDelay = 50; // Default initial delay (ms)
+    private $maxRetryDelay = 1000; // Default max delay (ms)
     
     /**
      * Private constructor to enforce singleton pattern
      */
-    private function __construct() {
-        $this->logger = Logger::getInstance();
-        $this->config = Config::getInstance();
+    // Make constructor public and inject dependencies
+    public function __construct(Logger $logger, Config $config) {
+        $this->logger = $logger;
+        $this->config = $config;
+
+        // Get retry configuration (use same keys as main DB for consistency)
+        $this->maxRetries = $this->config->get('database.max_retries', $this->maxRetries);
+        $this->initialRetryDelay = $this->config->get('database.initial_retry_delay', $this->initialRetryDelay);
+        $this->maxRetryDelay = $this->config->get('database.max_retry_delay', $this->maxRetryDelay);
         
         // Set database path in /tmp
         $this->dbPath = '/tmp/par2protect/queue/queue.db';
@@ -47,7 +56,7 @@ class QueueDatabase {
             $this->db->exec('PRAGMA temp_store = MEMORY');
             $this->db->exec('PRAGMA cache_size = 5000');
             
-            $this->logger->debug("Connected to queue database: {$this->dbPath}");
+            // Queue database connections are not logged to reduce noise
         } catch (\Exception $e) {
             $this->logger->error("Failed to connect to queue database", [
                 'path' => $this->dbPath,
@@ -62,12 +71,7 @@ class QueueDatabase {
      *
      * @return QueueDatabase
      */
-    public static function getInstance() {
-        if (self::$instance === null) {
-            self::$instance = new self();
-        }
-        return self::$instance;
-    }
+    // Removed getInstance() method
     
     /**
      * Initialize queue table
@@ -78,7 +82,7 @@ class QueueDatabase {
         try {
             // Create operation_queue table if it doesn't exist
             if (!$this->tableExists('operation_queue')) {
-                $this->logger->debug("Creating operation_queue table in queue database");
+                // Table creation is not logged to reduce noise
                 
                 $this->query("
                     CREATE TABLE operation_queue (
@@ -138,45 +142,102 @@ class QueueDatabase {
      * @param array $params Query parameters
      * @return \SQLite3Result|bool
      */
+    // Updated query method to use retry logic
     public function query($sql, $params = []) {
-        try {
-            $stmt = $this->db->prepare($sql);
-            
-            if ($stmt === false) {
-                throw new DatabaseException("Failed to prepare statement: " . $this->db->lastErrorMsg());
-            }
-            
-            // Bind parameters
-            foreach ($params as $param => $value) {
-                $type = \SQLITE3_TEXT;
-                
-                if (is_int($value)) {
-                    $type = \SQLITE3_INTEGER;
-                } elseif (is_float($value)) {
-                    $type = \SQLITE3_FLOAT;
-                } elseif (is_null($value)) {
-                    $type = \SQLITE3_NULL;
-                }
-                
-                $stmt->bindValue($param, $value, $type);
-            }
-            
-            // Execute query
-            $result = $stmt->execute();
-            
-            if ($result === false) {
-                throw new DatabaseException("Failed to execute query: " . $this->db->lastErrorMsg());
-            }
-            
-            return $result;
-        } catch (\Exception $e) {
-            $this->logger->error("Database query error", [
-                'sql' => $sql,
-                'params' => json_encode($params),
-                'error' => $e->getMessage()
-            ]);
-            throw new DatabaseException("Database query error: " . $e->getMessage());
+        return $this->queryWithRetry($sql, $params);
+    }
+
+    /**
+     * Execute SQL query with retry mechanism for database locked errors
+     * (Copied from Database class for consistency)
+     *
+     * @param string $sql SQL query
+     * @param array $params Query parameters
+     * @param int $retryCount Current retry count (internal use)
+     * @param int $delay Current delay in milliseconds (internal use)
+     * @return \SQLite3Result|bool
+     */
+    private function queryWithRetry($sql, $params = [], $retryCount = 0, $delay = null) {
+        // Set initial delay if not provided
+        if ($delay === null) {
+            $delay = $this->initialRetryDelay;
         }
+
+        try {
+            return $this->executeQuery($sql, $params);
+        } catch (DatabaseException $e) {
+            // Check if this is a database locked error
+            if (strpos($e->getMessage(), 'database is locked') !== false && $retryCount < $this->maxRetries) {
+                // Calculate next delay with exponential backoff (but cap at max delay)
+                $nextDelay = min($delay * 2, $this->maxRetryDelay);
+
+                $this->logger->warning("QueueDatabase locked, retrying operation", [
+                    'retry_count' => $retryCount + 1,
+                    'max_retries' => $this->maxRetries,
+                    'delay_ms' => $delay
+                ]);
+
+                usleep($delay * 1000); // Convert milliseconds to microseconds
+                return $this->queryWithRetry($sql, $params, $retryCount + 1, $nextDelay);
+            }
+            // Re-throw original exception if not a lock error or retries exceeded
+            throw $e;
+        } catch (\Exception $e) {
+             // Catch other potential exceptions during executeQuery
+             $this->logger->error("QueueDatabase query error", [
+                 'sql' => $sql,
+                 'params' => json_encode($params),
+                 'error' => $e->getMessage()
+             ]);
+             throw new DatabaseException("QueueDatabase query error: " . $e->getMessage());
+        }
+    }
+
+    /**
+     * Execute SQL query (internal implementation)
+     *
+     * @param string $sql SQL query
+     * @param array $params Query parameters
+     * @return \SQLite3Result|bool
+     */
+    private function executeQuery($sql, $params = []) {
+        // This method contains the actual query execution logic
+        // Extracted from the original query() method
+        $stmt = $this->db->prepare($sql);
+
+        if ($stmt === false) {
+            throw new DatabaseException("Failed to prepare statement: " . $this->db->lastErrorMsg());
+        }
+
+        // Bind parameters
+        foreach ($params as $param => $value) {
+            $type = \SQLITE3_TEXT;
+
+            if (is_int($value)) {
+                $type = \SQLITE3_INTEGER;
+            } elseif (is_float($value)) {
+                $type = \SQLITE3_FLOAT;
+            } elseif (is_null($value)) {
+                $type = \SQLITE3_NULL;
+            }
+
+            $stmt->bindValue($param, $value, $type);
+        }
+
+        // Execute query
+        $result = $stmt->execute();
+
+        if ($result === false) {
+            // Check if the error is 'database is locked' to allow retry
+            $lastError = $this->db->lastErrorMsg();
+            if (strpos($lastError, 'database is locked') !== false) {
+                 throw new DatabaseException($lastError); // Throw specific exception for retry logic
+            } else {
+                 throw new DatabaseException("Failed to execute query: " . $lastError);
+            }
+        }
+
+        return $result;
     }
     
     /**
@@ -266,6 +327,15 @@ class QueueDatabase {
         $this->inTransaction = false;
         
         return true;
+    }
+
+    /**
+     * Check if currently in a transaction
+     *
+     * @return bool
+     */
+    public function inTransaction(): bool {
+        return $this->inTransaction;
     }
     
     /**

@@ -8,10 +8,12 @@
 // Load bootstrap
 $bootstrap = require_once(__DIR__ . '/../core/bootstrap.php');
 
-use Par2Protect\Core\Logger;
+// No need for use statement
+// use Par2Protect\Core\Logger;
 
-// Get logger
-$logger = Logger::getInstance();
+// Get logger from container
+$container = get_container();
+$logger = $container->get('logger');
 
 $logger->info("Setting up events cleanup cron job");
 

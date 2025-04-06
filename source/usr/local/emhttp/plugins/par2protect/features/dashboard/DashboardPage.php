@@ -6,8 +6,15 @@ class DashboardPage {
     private $config;
     
     public function __construct() {
-        $this->logger = \Par2Protect\Core\Logger::getInstance();
-        $this->config = \Par2Protect\Core\Config::getInstance();
+        // Ensure bootstrap is included (if not already)
+        include_once(dirname(dirname(__DIR__)) . '/core/bootstrap.php');
+        
+        // Get the container instance using the global function
+        $container = get_container();
+
+        // Get required services from the container
+        $this->logger = $container->get('logger');
+        $this->config = $container->get('config');
     }
     
     public function render() {
@@ -15,14 +22,17 @@ class DashboardPage {
         $logger = $this->logger;
         $config = $this->config;
         
-        // Get settings from file directly for the UI
-        $par2protect_settings = parse_ini_file("/boot/config/plugins/par2protect/par2protect.cfg") ?: [];
-        $par2protect_settings['mode'] = $par2protect_settings['mode'] ?? 'file';
+        // Logger and Config should always be available via constructor injection now
+        
+        // Settings are now accessed via the injected $this->config service
+        // $par2protect_settings = $this->config->getAll(); // Example if needed in template
         
         // Log page load with settings
-        $logger->debug("Dashboard page loaded", [
-            'mode' => $par2protect_settings['mode']
-        ], false); // Don't show in dashboard
+        $logger->debug("DashboardPage.php file loaded", [
+            'file' => 'DashboardPage.php',
+            // 'mode' => $par2protect_settings['mode'], // Removed reference to undefined variable
+            '_dashboard' => false // Ensure this doesn't show in activity log
+        ]); // Don't show in dashboard
         
         // Get current values from settings
         $currentPaths = ''; // Will be populated from settings later

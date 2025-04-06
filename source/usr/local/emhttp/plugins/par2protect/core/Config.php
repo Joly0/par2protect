@@ -5,9 +5,10 @@ namespace Par2Protect\Core;
  * Config class for managing plugin configuration
  */
 class Config {
-    private static $instance = null;
+    // private static $instance = null; // Removed for DI
     private $config = [];
     private $configFile = '/boot/config/plugins/par2protect/config.json';
+    private $logger; // Added logger property
     
     /**
      * Configuration schema with default values and descriptions
@@ -261,22 +262,13 @@ class Config {
     /**
      * Private constructor to prevent direct instantiation
      */
-    private function __construct() {
+    // Make constructor public and inject Logger
+    public function __construct(Logger $logger) {
+        $this->logger = $logger;
         $this->loadConfig();
     }
     
-    /**
-     * Get singleton instance
-     *
-     * @return Config
-     */
-    public static function getInstance() {
-        if (self::$instance === null) {
-            self::$instance = new self();
-        }
-        
-        return self::$instance;
-    }
+    // Removed getInstance() method
     
     /**
      * Set config file path (useful for testing)
@@ -315,7 +307,7 @@ class Config {
                 }
             } else {
                 // Log error and use defaults
-                error_log("Failed to parse config file: " . json_last_error_msg());
+                $this->logger->error("Failed to parse config file", ['error' => json_last_error_msg(), 'file' => $this->configFile]);
                 $this->config = $defaultConfig;
                 
                 // If we have legacy config, merge it in and save
@@ -456,7 +448,7 @@ class Config {
             $configDir = dirname($this->configFile);
             if (!is_dir($configDir)) {
                 if (!@mkdir($configDir, 0755, true)) {
-                    error_log("Failed to create config directory: $configDir");
+                    $this->logger->error("Failed to create config directory", ['directory' => $configDir]);
                     return false;
                 }
             }
@@ -466,14 +458,14 @@ class Config {
                 json_encode($this->config, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)
             );
             
-            // Reset Logger instance to pick up new config
-            if (class_exists('\Par2Protect\Core\Logger')) {
-                \Par2Protect\Core\Logger::resetInstance();
-            }
+            // Logger instance no longer needs explicit reset here after removing Singleton pattern.
+            // It will pick up new config on the next instantiation (e.g., next request).
+            // if (class_exists('\Par2Protect\Core\Logger')) {
+            //    \Par2Protect\Core\Logger::resetInstance(); // Removed static call
             
             return $result !== false;
         } catch (\Exception $e) {
-            error_log("Failed to save config: " . $e->getMessage());
+            $this->logger->error("Failed to save config", ['file' => $this->configFile, 'error' => $e->getMessage()]);
             return false;
         }
     }

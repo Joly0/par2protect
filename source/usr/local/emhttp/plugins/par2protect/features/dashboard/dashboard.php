@@ -7,15 +7,11 @@ global $display;
 $bgcolor = strstr('white,azure', $display['theme']) ? '#f2f2f2' : '#1c1c1c';
 ?>
 
-<link type="text/css" rel="stylesheet" href="/plugins/par2protect/shared/css/common.css">
-<link type="text/css" rel="stylesheet" href="/plugins/par2protect/shared/css/sweetalert-dark-fix.css">
+<!-- Page-specific CSS -->
 <link type="text/css" rel="stylesheet" href="/plugins/par2protect/features/dashboard/dashboard.css">
-<script src="/plugins/par2protect/shared/js/logger.js"></script>
-<script src="/plugins/par2protect/shared/js/common.js"></script>
-<script src="/plugins/par2protect/shared/js/queue-manager.js"></script>
+
+<!-- Page-specific JavaScript -->
 <script src="/plugins/par2protect/features/dashboard/dashboard.js"></script>
-<script src="/plugins/par2protect/features/dashboard/verification-options.js"></script>
-<script src="/plugins/par2protect/features/dashboard/fix-queue-button.js"></script>
 
 <div class="error-message" id="error-display"></div>
 
@@ -258,6 +254,3 @@ $bgcolor = strstr('white,azure', $display['theme']) ? '#f2f2f2' : '#1c1c1c';
 
 <!-- Include Verification Options Dialog -->
 <?php include 'verification-options-dialog.php'; ?>
-
-<!-- Include Help Text JavaScript -->
-<script src="/plugins/par2protect/shared/js/help-text.js"></script>

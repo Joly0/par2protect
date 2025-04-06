@@ -5,7 +5,7 @@ namespace Par2Protect\Services;
 require_once __DIR__ . '/verification/Verification.php';
 require_once __DIR__ . '/verification/VerificationRepository.php';
 require_once __DIR__ . '/verification/VerificationOperations.php';
-require_once __DIR__ . '/verification/MetadataManager.php';
+// require_once __DIR__ . '/verification/MetadataManager.php'; // Removed - Consolidated to Core
 
 // For backward compatibility, we'll create a class with the same name in the same namespace
 // that extends our new Verification class

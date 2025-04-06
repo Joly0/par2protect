@@ -13,9 +13,12 @@ class SettingsEndpoint {
     /**
      * SettingsEndpoint constructor
      */
-    public function __construct() {
-        $this->config = Config::getInstance();
-        $this->logger = Logger::getInstance();
+    public function __construct(
+        Config $config,
+        Logger $logger
+    ) {
+        $this->config = $config;
+        $this->logger = $logger;
     }
     
     /**

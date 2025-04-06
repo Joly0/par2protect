@@ -1,826 +1,273 @@
 <?php
 /**
  * Queue Processor Script
- * 
  * This script processes operations from the queue.
  */
 
 // Load bootstrap
-$bootstrap = require_once(__DIR__ . '/../core/bootstrap.php');
+error_log("Par2Protect: process_queue.php script started execution."); // Use error_log for pre-bootstrap logging
+require_once(__DIR__ . '/../core/bootstrap.php');
 
+// Explicitly include the custom exception to bypass potential autoload issues
+require_once(__DIR__ . '/../core/exceptions/Par2FilesExistException.php');
+
+// Required Services (Type hints primarily)
+use Par2Protect\Services\Protection;
+use Par2Protect\Services\Verification;
 use Par2Protect\Core\Database;
 use Par2Protect\Core\QueueDatabase;
 use Par2Protect\Core\Logger;
 use Par2Protect\Core\Config;
-use Par2Protect\Services\Protection;
-use Par2Protect\Services\Verification;
 
-// Function to log to both the logger and stdout
-function log_message($message, $level = 'INFO', $context = []) {
-    global $logger;
-    global $config;
-    
-    // Add script identifier to context
-    $context['script'] = 'process_queue';
-    
-    // Log to the logger
-    if ($level === 'INFO') {
-        $logger->info($message, $context);
-    } elseif ($level === 'ERROR') {
-        $logger->error($message, $context);
-    } elseif ($level === 'WARNING') {
-        $logger->warning($message, $context);
-    } elseif ($level === 'DEBUG') {
-        $logger->debug($message, $context);
-    }
-    
-    // Only output DEBUG messages to stdout if debug logging is enabled
-    if ($level !== 'DEBUG' || $config->get('debug.debug_logging', false)) {
-        // Also output to stdout for the cron job to capture
-        echo date('[Y-m-d H:i:s]') . " $level: $message\n";
-    }
-}
+// --- Global Variables ---
+$logger = null;
+$config = null;
+
 
 /**
  * Check if a database operation is safe to perform
- * This function attempts to detect potential deadlocks or lock contention
- * 
- * @param Database $db Database instance
- * @param string $operationType Type of operation being performed
- * @return bool True if operation is safe to perform, false otherwise
  */
-function is_database_operation_safe($db, $queueDb, $operationType) {
+function is_database_operation_safe(Database $db, QueueDatabase $queueDb, $operationType) {
+    global $logger;
     try {
-        // For high-risk operations like remove, perform an additional check
         if (in_array($operationType, ['remove'])) {
-            // Try a simple query with a short timeout to check database availability
-            $db->getSQLite()->busyTimeout(500); // Set a short timeout for this check
-            $db->query("PRAGMA quick_check");
-            $db->getSQLite()->busyTimeout(5000); // Reset to normal timeout
-        }
-        return true;
+            $db->getSQLite()->busyTimeout(500); $db->query("PRAGMA quick_check"); $db->getSQLite()->busyTimeout(5000);
+        } return true;
     } catch (\Exception $e) {
-        log_message("Database appears to be under contention, delaying operation: " . $e->getMessage(), 'WARNING');
-        $db->getSQLite()->busyTimeout(5000); // Reset to normal timeout
+        $logger->warning("Database appears to be under contention, delaying operation: " . $e->getMessage());
+        try { $db->getSQLite()->busyTimeout(5000); } catch (\Exception $_) {}
         return false;
     }
 }
 
-// Get components
-$logger = Logger::getInstance();
-$db = Database::getInstance();
-$queueDb = QueueDatabase::getInstance();
-$config = Config::getInstance();
+// --- Main Script Execution ---
+$container = get_container();
+$logger = $container->get('logger'); // Assign to global
+$config = $container->get('config'); // Assign to global
 
-// Check debug logging setting
-$debugLoggingEnabled = $config->get('debug.debug_logging', false);
-log_message("Debug logging enabled: " . ($debugLoggingEnabled ? 'true' : 'false'), 'DEBUG', ['setting' => $debugLoggingEnabled]);
+// Enable console output for this script
+$logger->enableStdoutLogging(true);
+$db = $container->get('database');
+$queueDb = $container->get('queueDb');
+$eventSystem = $container->get('eventSystem');
 
-log_message("Starting queue processor", 'DEBUG');
+$logger->debug("Debug logging enabled: " . ($config->get('debug.debug_logging', false) ? 'true' : 'false'));
+$logger->debug("Starting queue processor");
 
-// Create a lock file to prevent multiple instances
 $lockFile = '/tmp/par2protect/locks/processor.lock';
 $myPid = getmypid();
-log_message("Current process PID: $myPid", 'DEBUG');
-
-// Ensure queue directory exists
+$logger->debug("Current process PID: $myPid");
 $queueDir = dirname($lockFile);
-if (!is_dir($queueDir)) {
-    log_message("Creating queue directory: $queueDir", 'DEBUG');
-    mkdir($queueDir, 0755, true);
-}
+if (!is_dir($queueDir)) { $logger->debug("Creating queue directory: $queueDir"); @mkdir($queueDir, 0755, true); }
 
-// Use file locking to ensure only one process can acquire the lock
 $lockFp = fopen($lockFile, 'c+');
-if (!$lockFp) {
-    log_message("Could not open lock file: $lockFile", 'ERROR');
-    exit(1);
-}
+if (!$lockFp) { $logger->error("Could not open lock file: $lockFile"); exit(1); }
+if (!flock($lockFp, LOCK_EX | LOCK_NB)) { $logger->debug("Queue processor already running, exiting"); fclose($lockFp); exit(0); }
 
-// Try to get an exclusive lock (non-blocking)
-if (!flock($lockFp, LOCK_EX | LOCK_NB)) {
-    // Another process has the lock
-    log_message("Queue processor already running, exiting", 'DEBUG');
-    fclose($lockFp);
-    exit(0);
-}
+$logger->debug("Successfully acquired lock file: " . $lockFile);
+ftruncate($lockFp, 0); fwrite($lockFp, $myPid); fflush($lockFp); touch($lockFile, time() + 60);
 
-// We have the lock, write our PID to the file
-ftruncate($lockFp, 0);
-fwrite($lockFp, $myPid);
-fflush($lockFp);
-
-// Set a shorter timeout for the lock file to ensure it's released quickly
-// This helps the next queue processor start faster
-touch($lockFile, time() + 60); // Set the lock file to expire in 60 seconds
-
-// Register a shutdown function to release the lock and handle stuck operations
-register_shutdown_function(function() use ($lockFp, $lockFile, $myPid, $db, $queueDb, $logger) {
-    log_message("Cleaning up lock file for PID: $myPid", 'DEBUG', ['lock_file' => $lockFile]);
-    
-    // Check if the lock file handle is still valid
-    if (is_resource($lockFp)) {
-        flock($lockFp, LOCK_UN);
-        fclose($lockFp);
-    }
-    
-    // Make sure the lock file is removed
-    if (file_exists($lockFile)) {
-        @unlink($lockFile);
-    }
-    
-    // Check if there are any operations still marked as processing by this process
+register_shutdown_function(function() use ($lockFp, $lockFile, $myPid, $queueDb, $logger) {
+    $logger->debug("Cleaning up lock file for PID: $myPid");
+    if (is_resource($lockFp)) { flock($lockFp, LOCK_UN); fclose($lockFp); }
+    if (file_exists($lockFile)) { @unlink($lockFile); }
     try {
-        $result = $queueDb->query("
-            SELECT id FROM operation_queue
-            WHERE status = 'processing' AND pid = :pid
-        ", [':pid' => $myPid]);
-        
+        $result = $queueDb->query("SELECT id FROM operation_queue WHERE status = 'processing' AND pid = :pid", [':pid' => $myPid]);
         $stuckOperations = $queueDb->fetchAll($result);
-        
         if (!empty($stuckOperations)) {
-            log_message("Found " . count($stuckOperations) . " operations still marked as processing on shutdown", 'WARNING');
-            
-            // Mark them as failed
+            $logger->warning("Found " . count($stuckOperations) . " operations still marked as processing on shutdown");
             foreach ($stuckOperations as $op) {
-                log_message("Marking operation as failed on shutdown - ID: " . $op['id'], 'WARNING');
-                
+                $logger->warning("Marking operation as failed on shutdown - ID: " . $op['id']);
                 try {
-                    $queueDb->query("
-                        UPDATE operation_queue
-                        SET status = 'failed',
-                            completed_at = :now,
-                            updated_at = :now,
-                            result = :result
-                        WHERE id = :id
-                    ", [
-                        ':id' => $op['id'],
-                        ':now' => time(),
-                        ':result' => json_encode([
-                            'success' => false,
-                            'error' => 'Operation terminated unexpectedly during processing'
-                        ])
+                    $queueDb->query("UPDATE operation_queue SET status = 'failed', completed_at = :now, updated_at = :now, result = :result WHERE id = :id", [
+                        ':id' => $op['id'], ':now' => time(), ':result' => json_encode(['success' => false, 'error' => 'Operation terminated unexpectedly'])
                     ]);
-                } catch (Exception $e) {
-                    log_message("Failed to mark operation as failed: " . $e->getMessage(), 'ERROR');
-                }
+                } catch (\Exception $e) { $logger->error("Failed to mark operation as failed: " . $e->getMessage()); }
             }
         }
-    } catch (Exception $e) {
-        log_message("Error checking for stuck operations on shutdown: " . $e->getMessage(), 'ERROR');
-    }
-    
-    log_message("Queue processor finished", 'DEBUG');
+    } catch (\Exception $e) { $logger->error("Error checking for stuck operations on shutdown: " . $e->getMessage()); }
+    $logger->debug("Queue processor finished");
 });
 
-log_message("Lock acquired for PID: $myPid", 'DEBUG');
-
-// Set a maximum execution time for the script
-$maxExecutionTime = $config->get('queue.max_execution_time', 1800); // 30 minutes in seconds
+$logger->debug("Lock acquired for PID: $myPid");
+$maxExecutionTime = $config->get('queue.max_execution_time', 1800);
 $startTime = time();
 
 try {
-    // Phase 4.1: Check if database is locked before starting new operations
-    $isDatabaseLocked = false;
-    try {
-        // Try a simple query to check if the database is locked
-        $db->query("PRAGMA quick_check");
-    } catch (\Exception $e) {
-        if (strpos($e->getMessage(), 'database is locked') !== false) {
-            $isDatabaseLocked = true;
-            log_message("Database is currently locked, waiting before processing operations", 'WARNING');
-            
-            // Wait a moment before trying again
-            sleep(2);
-            
-            // Try again
-            try {
-                $db->query("PRAGMA quick_check");
-                $isDatabaseLocked = false;
-            } catch (\Exception $e) {
-                log_message("Database is still locked after waiting, will skip processing this cycle", 'WARNING');
-            }
+    while (time() - $startTime < $maxExecutionTime) {
+        try { $db->query("PRAGMA quick_check"); } catch (\Exception $e) {
+            if (strpos($e->getMessage(), 'database is locked') !== false) { $logger->warning("Main database locked, waiting..."); sleep(5); continue; } else { throw $e; }
         }
-    }
-    
-    // First, check for stuck operations
-    $result = $queueDb->query("
-        SELECT * FROM operation_queue
-        WHERE status = 'processing' AND started_at < :timeout -- Check for operations stuck for more than 1 hour
-        ORDER BY created_at ASC
-    ", [':timeout' => time() - 3600]);
-    
-    $stuckOperations = $queueDb->fetchAll($result);
-    
-    // Handle stuck operations
-    foreach ($stuckOperations as $stuckOp) {
-        log_message("Found stuck operation - ID: " . $stuckOp['id'] . ", marking as failed", 'WARNING');
-        
-        // Mark as failed
-        $queueDb->query("
-            UPDATE operation_queue
-            SET status = 'failed',
-                completed_at = :now,
-                updated_at = :now,
-                result = :result
-            WHERE id = :id
-        ", [
-            ':id' => $stuckOp['id'],
-            ':now' => time(),
-            ':result' => json_encode([
-                'success' => false,
-                'error' => 'Operation timed out or was interrupted'
-            ])
-        ]);
-        
-        log_message("Stuck operation marked as failed - ID: " . $stuckOp['id'], 'DEBUG');
-    }
-    
-    // Only proceed with processing if the database is not locked
-    if (!$isDatabaseLocked) {
-        // Check the maximum concurrent operations setting
-        $maxConcurrentOperations = $config->get('resource_limits.max_concurrent_operations', 2);
-        
-        // Count currently running operations
-        $result = $queueDb->query("
-            SELECT COUNT(*) as count FROM operation_queue
-            WHERE status = 'processing'
-        ");
-        $row = $queueDb->fetchOne($result);
-        $runningOperations = $row['count'];
-        
-        log_message("Current running operations: $runningOperations, Maximum allowed: $maxConcurrentOperations", 'DEBUG');
-        
-        // Only proceed if we haven't reached the maximum concurrent operations limit
-        if ($runningOperations < $maxConcurrentOperations) {
-            $result = $queueDb->query("
-                SELECT * FROM operation_queue
-                WHERE status = 'pending'
-                ORDER BY
-                    CASE
-                        WHEN operation_type = 'remove' THEN 0  -- Process remove operations first
-                        WHEN operation_type = 'repair' THEN 1  -- Then repair operations
-                        WHEN operation_type = 'protect' THEN 2 -- Then protect operations
-                        ELSE 3                                 -- Verify operations last
-                    END, created_at ASC
-                LIMIT 1
-            ");
-            
-            $operation = $queueDb->fetchOne($result);
-            
-            if ($operation) {
-                log_message("Processing operation - ID: " . $operation['id'] . ", Type: " . $operation['operation_type'] . ", Status: " . $operation['status'], 'DEBUG');
-                
-                // Mark as processing with our PID
-                $queueDb->query("
-                    UPDATE operation_queue
-                    SET status = 'processing',
-                        started_at = :now,
-                        updated_at = :now,
-                        pid = :pid
-                    WHERE id = :id
-                ", [
-                    ':id' => $operation['id'],
-                    ':now' => time(),
-                    ':pid' => $myPid
-                ]);
-                
-                // Record start time for minimum processing duration
-                $operationStartTime = microtime(true);
-                
-                // Process based on operation type
-                $parameters = json_decode($operation['parameters'], true);
-                $result = null;
-                
-                // Validate parameters
-                if (!is_array($parameters)) {
-                    log_message("Invalid parameters for operation ID: " . $operation['id'] . " - Not a valid JSON object", 'ERROR');
-                    $result = ['success' => false, 'error' => 'Invalid parameters: Not a valid JSON object'];
-                }
-                // Make sure either path or id parameter exists for all operations
-                elseif ((!isset($parameters['path']) || empty($parameters['path'])) && 
-                        (!isset($parameters['id']) || empty($parameters['id']))) {
-                    log_message("Invalid parameters for operation ID: " . $operation['id'] . " - Missing both path and id parameters", 'ERROR');
-                    $result = ['success' => false, 'error' => 'Invalid parameters: Either path or id parameter is required'];
-                }
-                // If parameters are valid, process the operation
-                else {
-                    // Register signal handlers
-                    declare(ticks=1);
-                    
-                    // Handle termination signals
-                    pcntl_signal(SIGTERM, function() use ($operation, $queueDb) {
-                        log_message("Received termination signal for operation - ID: " . $operation['id'], 'WARNING');
-                        
-                        // Mark the operation as cancelled
-                        try {
-                            $queueDb->query("
-                                UPDATE operation_queue
-                                SET status = 'cancelled',
-                                    completed_at = :now,
-                                    updated_at = :now,
-                                    result = :result
-                                WHERE id = :id
-                            ", [
-                                ':id' => $operation['id'],
-                                ':now' => time(),
-                                ':result' => json_encode([
-                                    'success' => false,
-                                    'error' => 'Operation cancelled by user or system'
-                                ])
-                            ]);
-                            log_message("Marked operation as cancelled due to termination - ID: " . $operation['id'], 'WARNING');
-                        } catch (Exception $e) {
-                            log_message("Failed to mark operation as cancelled: " . $e->getMessage(), 'ERROR');
-                        }
-                        
-                        exit(1);
-                    });
-                    
-                    // Process operation
-                    switch ($operation['operation_type']) {
-                        // Phase 4.2: Queue management improvements - check for potential deadlocks
-                        case 'protect':
-                            $protection = new Protection();
-                            
-                            // Extract advanced settings if provided
-                            $advancedSettings = null;
-                            if (isset($parameters['advanced_settings'])) {
-                                // If advanced_settings is a string, decode it
-                                if (is_string($parameters['advanced_settings'])) {
-                                    $advancedSettings = json_decode($parameters['advanced_settings'], true);
-                                    
-                                    log_message("DIAGNOSTIC: Advanced settings decoded from JSON string", 'DEBUG', [
-                                        'path' => $parameters['path'] ?? 'not set',
-                                        'advanced_settings_string' => $parameters['advanced_settings'],
-                                        'decoded_settings' => is_array($advancedSettings) ? json_encode($advancedSettings) : 'decode failed',
-                                        'json_error' => json_last_error_msg()
-                                    ]);
-                                } else {
-                                    $advancedSettings = $parameters['advanced_settings'];
-                                }
-                                
-                                log_message("DIAGNOSTIC: Advanced settings found in queue parameters", 'DEBUG', [
-                                    'path' => $parameters['path'] ?? 'not set',
-                                    'advanced_settings' => is_array($advancedSettings) ? json_encode($advancedSettings) : $advancedSettings
-                                ]);
-                            }
-                            
-                            // Also check for individual advanced settings at the top level
-                            if (!$advancedSettings) {
-                                $advancedSettings = [];
-                            }
-                            
-                            // Add any top-level advanced settings
-                            if (isset($parameters['block_count'])) {
-                                $advancedSettings['block_count'] = $parameters['block_count'];
-                            }
-                            if (isset($parameters['block_size'])) {
-                                $advancedSettings['block_size'] = $parameters['block_size'];
-                            }
-                            if (isset($parameters['target_size'])) {
-                                $advancedSettings['target_size'] = $parameters['target_size'];
-                            }
-                            if (isset($parameters['recovery_files'])) {
-                                $advancedSettings['recovery_files'] = $parameters['recovery_files'];
-                            }
-                            
-                            // If no advanced settings were found, set to null
-                            if (empty($advancedSettings)) {
-                                $advancedSettings = null;
-                            }
-                            
-                            // Add diagnostic logging for protection parameters
-                            log_message("DIAGNOSTIC: Processing protect operation", 'DEBUG', [
-                                'path' => $parameters['path'] ?? 'not set',
-                                'file_types' => isset($parameters['file_types']) ? 
-                                    (is_array($parameters['file_types']) ? json_encode($parameters['file_types']) : $parameters['file_types']) : 'not set',
-                                'file_types_count' => isset($parameters['file_types']) && is_array($parameters['file_types']) ? 
-                                    count($parameters['file_types']) : 'not an array',
-                                'file_categories' => isset($parameters['file_categories']) ?
-                                    (is_array($parameters['file_categories']) ? json_encode($parameters['file_categories']) : $parameters['file_categories']) : 'not set',
-                                'advanced_settings' => isset($advancedSettings) ?
-                                    (is_array($advancedSettings) ? json_encode($advancedSettings) : $advancedSettings) : 'not set'
-                            ]);
-                            
-                            $result = $protection->protect(
-                                $parameters['path'],
-                                $parameters['redundancy'] ?? null,
-                                $parameters['file_types'] ?? null,
-                                $parameters['file_categories'] ?? null,
-                                $advancedSettings
-                            );
-                            break;
-                            
-                        case 'verify':
-                            $verification = new Verification();
-                            if (isset($parameters['id']) && !empty($parameters['id'])) {
-                                // Use ID-based verification if ID is provided
-                                $verifyMetadata = isset($parameters['verify_metadata']) ? (bool)$parameters['verify_metadata'] : false;
-                                $autoRestoreMetadata = isset($parameters['auto_restore_metadata']) ? (bool)$parameters['auto_restore_metadata'] : false;
-                                
-                                $result = $verification->verifyById(
-                                    $parameters['id'],
-                                    isset($parameters['force']) ? $parameters['force'] : false,
-                                    $verifyMetadata,
-                                    $autoRestoreMetadata
-                                );
-                            } else {
-                                // Fall back to path-based verification
-                                $verifyMetadata = isset($parameters['verify_metadata']) ? (bool)$parameters['verify_metadata'] : false;
-                                $autoRestoreMetadata = isset($parameters['auto_restore_metadata']) ? (bool)$parameters['auto_restore_metadata'] : false;
-                                
-                                $result = $verification->verify(
-                                    $parameters['path'],
-                                    isset($parameters['force']) ? $parameters['force'] : false,
-                                    $verifyMetadata,
-                                    $autoRestoreMetadata
-                                );
-                            }
-                            
-                            // Log debug information only (not for activity log)
-                            $pathOrId = isset($parameters['id']) ? "ID: " . $parameters['id'] : "path: " . $parameters['path'];
-                            log_message("Verification result for " . $pathOrId, 'DEBUG', [
-                                'path' => $parameters['path'] ?? null,
-                                'id' => $parameters['id'] ?? null
-                            ]);
-                            log_message("Status: " . ($result['status'] ?? 'unknown'), 'DEBUG', ['status' => $result['status'] ?? 'unknown']);
-                            
-                            // Ensure operations with VERIFIED status are always marked as successful
-                            if (isset($result['status']) && $result['status'] === 'VERIFIED') {
-                                log_message("DIAGNOSTIC: Ensuring VERIFIED operation is marked as successful", 'DEBUG', [
-                                    'path' => $parameters['path'] ?? null,
-                                    'id' => $parameters['id'] ?? null,
-                                    'status' => $result['status']
-                                ]);
-                                $result['success'] = true;
-                            }
-                            
-                            // Add diagnostic logging for verification parameters
-                            log_message("DIAGNOSTIC: Verification parameters", 'DEBUG', [
-                                'path' => $parameters['path'] ?? null,
-                                'id' => $parameters['id'] ?? null,
-                                'force_param' => isset($parameters['force']) ? ($parameters['force'] ? 'true' : 'false') : 'not set',
-                                'force_type' => isset($parameters['force']) ? gettype($parameters['force']) : 'not set',
-                                'verify_metadata' => isset($parameters['verify_metadata']) ? ($parameters['verify_metadata'] ? 'true' : 'false') : 'not set',
-                                'auto_restore_metadata' => isset($parameters['auto_restore_metadata']) ? ($parameters['auto_restore_metadata'] ? 'true' : 'false') : 'not set',
-                                'parameters_json' => json_encode($parameters),
-                                'operation_id' => $operation['id']
-                            ]);
-                            
-                            log_message("Success: " . ($result['success'] ? 'true' : 'false'), 'DEBUG', ['success' => $result['success']]);
-                            break;
-                            
-                        case 'repair':
-                            $verification = new Verification();
-                            $restoreMetadata = isset($parameters['restore_metadata']) ? (bool)$parameters['restore_metadata'] : true;
-                            
-                            if (isset($parameters['id']) && !empty($parameters['id'])) {
-                                // Use ID-based repair if ID is provided
-                                $result = $verification->repairById(
-                                    $parameters['id'],
-                                    $restoreMetadata
-                                );
-                            } else {
-                                // Fall back to path-based repair
-                                $result = $verification->repair(
-                                    $parameters['path'],
-                                    $restoreMetadata
-                                );
-                            }
-                            
-                            // Add diagnostic logging for repair parameters
-                            log_message("DIAGNOSTIC: Repair parameters", 'DEBUG', [
-                                'path' => $parameters['path'] ?? null,
-                                'id' => $parameters['id'] ?? null,
-                                'restore_metadata' => isset($parameters['restore_metadata']) ? ($parameters['restore_metadata'] ? 'true' : 'false') : 'true (default)',
-                                'parameters_json' => json_encode($parameters),
-                                'operation_id' => $operation['id']
-                            ]);
-                            break;
-                            
-                        case 'remove':
-                            // For remove operations, check if it's safe to proceed
-                            if (!is_database_operation_safe($db, $queueDb, 'remove')) {
-                                log_message("Delaying remove operation due to potential database contention", 'WARNING');
-                                sleep(3); // Wait a bit before trying again
-                            }
-                            
-                            // Add diagnostic logging for remove operation parameters
-                            log_message("DIAGNOSTIC: Processing remove operation", 'DEBUG', [
-                                'path' => $parameters['path'] ?? 'not set',
-                                'path_type' => isset($parameters['path']) ? gettype($parameters['path']) : 'not set',
-                                'is_numeric_path' => isset($parameters['path']) && is_numeric($parameters['path']) ? 'true' : 'false',
-                                'id' => $parameters['id'] ?? 'not set',
-                                'operation_id' => $operation['id'],
-                                'operation_type' => 'remove'
-                            ]);
-                            
-                            $protection = new Protection();
-                            if (isset($parameters['id']) && !empty($parameters['id'])) {
-                                // Use ID-based removal if ID is provided
-                                log_message("DIAGNOSTIC: Using ID-based removal", 'DEBUG', [
-                                    'id' => $parameters['id'],
-                                    'operation_id' => $operation['id']
-                                ]);
-                                $result = $protection->removeById(
-                                    $parameters['id']
-                                );
-                            } else {
-                                // Fall back to path-based removal
-                                log_message("DIAGNOSTIC: Using path-based removal", 'DEBUG', [
-                                    'path' => $parameters['path'],
-                                    'path_type' => gettype($parameters['path']),
-                                    'is_numeric' => is_numeric($parameters['path']) ? 'true' : 'false',
-                                    'operation_id' => $operation['id']
-                                ]);
-                                $result = $protection->remove(
-                                    $parameters['path']
-                                );
-                            }
-                            
-                            // Log debug information only (not for activity log)
-                            $pathOrId = isset($parameters['id']) ? "ID: " . $parameters['id'] : "path: " . $parameters['path'];
-                            log_message("Removal result for " . $pathOrId, 'DEBUG', [
-                                'path' => $parameters['path'] ?? null,
-                                'id' => $parameters['id'] ?? null
-                            ]);
-                            log_message("Success: " . ($result['success'] ? 'true' : 'false'), 'DEBUG', ['success' => $result['success']]);
-                            break;
-                            
-                        default:
-                            log_message("Unknown operation type: " . $operation['operation_type'], 'ERROR');
-                            $result = ['success' => false, 'error' => 'Unknown operation type'];
-                    }
-                    
-                }
-                
-                // Calculate elapsed time and ensure minimum processing time (5 seconds)
-                $elapsedTime = microtime(true) - $operationStartTime;
-                $minProcessingTime = 5.0; // 5 seconds minimum processing time
-                
-                if ($elapsedTime < $minProcessingTime) {
-                    $sleepTime = ceil(($minProcessingTime - $elapsedTime) * 1000000);
-                    log_message("Operation completed too quickly, sleeping for " . ($sleepTime / 1000000) . " seconds to ensure visibility in UI", 'DEBUG', 
-                        ['sleep_time' => $sleepTime / 1000000]);
-                    usleep($sleepTime);
-                }
-                
-                // Mark as completed
-                $queueDb->query("
-                    UPDATE operation_queue
-                    SET status = :status,
-                        completed_at = :now,
-                        updated_at = :now,
-                        result = :result
-                    WHERE id = :id
-                ", [
-                    ':id' => $operation['id'],
-                    ':status' => isset($result['skipped']) && $result['skipped'] ? 'skipped' : ($result['success'] ? 'completed' : 'failed'),
-                    ':now' => time(),
-                    ':result' => json_encode($result)
-                ]);
-                // Emit an event for operation completion
-                $eventSystem = \Par2Protect\Core\EventSystem::getInstance();
-                $eventSystem->addEvent('operation.completed', [
-                    'id' => $operation['id'],
-                    'operation_type' => $operation['operation_type'],
-                    'status' => isset($result['skipped']) && $result['skipped'] ? 'skipped' : ($result['success'] ? 'completed' : 'failed'),
-                    'result' => $result,
-                    'path' => isset($parameters['path']) ? $parameters['path'] : null,
-                    'completed_at' => time()
-                ]);
-                log_message("Operation event emitted - ID: " . $operation['id'], 'DEBUG');
-                
-                log_message("Operation processed - ID: " . $operation['id'] .
-                           ", Type: " . $operation['operation_type'] .
-                           ", Status: " . (isset($result['skipped']) && $result['skipped'] ? 'skipped' : ($result['success'] ? 'completed' : 'failed')) .
-                           ", Duration: " . round(microtime(true) - $operationStartTime, 2) . " seconds", 'DEBUG',
-                           [
-                               'operation_id' => $operation['id'],
-                               'operation_type' => $operation['operation_type'],
-                               'status' => isset($result['skipped']) && $result['skipped'] ? 'skipped' : ($result['success'] ? 'completed' : 'failed'),
-                               'duration' => round(microtime(true) - $operationStartTime, 2)
-                           ]);
-                
-                // Check if there are more pending operations
-                $result = $queueDb->query("
-                    SELECT COUNT(*) as count FROM operation_queue
-                    WHERE status = 'pending'
-                ");
-                $row = $queueDb->fetchOne($result);
-                $pendingCount = $row['count'];
-                
-                // Check if we just completed a verification operation
-                if ($operation['operation_type'] === 'verify') {
-                    // Check if this was the last verification task in a batch
-                    $result = $queueDb->query("
-                        SELECT COUNT(*) as count FROM operation_queue
-                        WHERE operation_type = 'verify'
-                        AND status = 'pending'
-                    ");
-                    $row = $queueDb->fetchOne($result);
-                    $pendingVerifyCount = $row['count'];
-                    
-                    // If no more pending verification tasks, check if we should send a notification
-                    if ($pendingVerifyCount === 0) {
-                        // Get all recently completed verification tasks (last 10 minutes)
-                        $recentTime = time() - 600; // 10 minutes ago
-                        $result = $queueDb->query("
-                            SELECT COUNT(*) as total,
-                            SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as success,
-                            SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed
-                            FROM operation_queue
-                            WHERE operation_type = 'verify'
-                            AND status IN ('completed', 'failed')
-                            AND completed_at >= :recent_time
-                        ", [':recent_time' => $recentTime]);
-                        
-                        $stats = $queueDb->fetchOne($result);
-                        
-                        // If we have completed verification tasks, send a notification
-                        if ($stats && $stats['total'] > 0) {
-                            log_message("All verification tasks completed. Sending notification.", 'DEBUG');
-                            
-                            // Get details of failed operations if any
-                            $failedItems = [];
-                            if ($stats['failed'] > 0) {
-                                $result = $queueDb->query("
-                                    SELECT parameters FROM operation_queue
-                                    WHERE operation_type = 'verify'
-                                    AND status = 'failed'
-                                    AND completed_at >= :recent_time
-                                ", [':recent_time' => $recentTime]);
-                                
-                                $failedOps = $queueDb->fetchAll($result);
-                                foreach ($failedOps as $op) {
-                                    $params = json_decode($op['parameters'], true);
-                                    if (isset($params['path'])) {
-                                        $failedItems[] = $params['path'];
-                                    }
-                                }
-                            }
-                            
-                            // Get details of items with issues (damaged, missing, error)
-                            $problemItems = [];
-                            try {
-                                // Use main database connection ($db) instead of queue database ($queueDb)
-                                // since protected_items table exists in the main database
-                                $result = $db->query("
-                                    SELECT path, last_status FROM protected_items
-                                    WHERE last_status IN ('DAMAGED', 'MISSING', 'ERROR', 'REPAIR_FAILED')
-                                    AND last_verified >= :recent_time
-                                ", [':recent_time' => date('Y-m-d H:i:s', $recentTime)]);
-                                
-                                $problemOps = $db->fetchAll($result);
-                            } catch (\Exception $e) {
-                                // Log the error but continue processing
-                                log_message("Error querying problem items: " . $e->getMessage(), 'WARNING');
-                                $problemOps = [];
-                            }
-                            foreach ($problemOps as $op) {
-                                $problemItems[] = [
-                                    'path' => $op['path'],
-                                    'status' => $op['last_status']
-                                ];
-                            }
-                            
-                            // Check if notifications are enabled
-                            $notificationsEnabled = $config->get('notifications.enabled', true);
-                            
-                            if ($notificationsEnabled) {
-                                // Prepare notification message
-                                $subject = "PAR2Protect Verification Results";
-                                
-                                // Check if we have any problem items
-                                $hasProblems = !empty($problemItems);
-                                
-                                if ($hasProblems) {
-                                    $description = "Verification completed with issues for " . $stats['total'] . " items";
-                                    $severity = "warning";
-                                    $message = "Verification completed. " . $stats['success'] . " operations succeeded, " . $stats['failed'] . " operations failed.\n\n";
-                                    
-                                    if (!empty($problemItems)) {
-                                        $message .= "Items with issues:\n";
-                                        foreach ($problemItems as $item) {
-                                            $message .= "- " . $item['path'] . " (" . $item['status'] . ")\n";
-                                        }
-                                        $message .= "\n";
-                                    }
-                                    
-                                    if (!empty($failedItems)) {
-                                        $message .= "Failed operations:\n";
-                                        foreach ($failedItems as $item) {
-                                            $message .= "- $item\n";
-                                        }
-                                    }
-                                } else if ($stats['failed'] > 0) {
-                                    $description = "Verification completed with failed operations for " . $stats['total'] . " items";
-                                    $severity = "warning";
-                                    $message = "Verification completed with issues. " . $stats['success'] . " succeeded, " . $stats['failed'] . " failed.\n\nFailed operations:\n";
-                                    foreach ($failedItems as $item) {
-                                        $message .= "- $item\n";
-                                    }
-                                } else {
-                                    $description = "Verification completed for " . $stats['total'] . " items";
-                                    $severity = "normal";
-                                    $message = "All " . $stats['total'] . " verification tasks completed successfully.";
-                                }
-                                
-                                // Send notification using Unraid notification system
-                                $notifyScript = "/usr/local/emhttp/plugins/dynamix/scripts/notify";
-                                $event = "par2protect_verification";
-                                
-                                // Build the command
-                                $command = "$notifyScript";
-                                $command .= " -e \"$event\"";
-                                $command .= " -s \"$subject\"";
-                                $command .= " -d \"$description\"";
-                                $command .= " -i \"$severity\"";
-                                $command .= " -m \"$message\"";
-                                $command .= " -l \"PAR2Protect\"";
-                                
-                                // Execute the command
-                                log_message("Sending notification: $command", 'DEBUG', ['command' => $command]);
-                                exec($command, $notifyOutput, $notifyReturnCode);
-                                
-                                if ($notifyReturnCode === 0) {
-                                    log_message("Notification sent successfully", 'INFO', ['return_code' => $notifyReturnCode]);
-                                } else {
-                                    log_message("Failed to send notification. Return code: $notifyReturnCode", 'ERROR', ['return_code' => $notifyReturnCode]);
-                                }
-                            } else {
-                                log_message("Notifications are disabled in settings, skipping notification", 'DEBUG');
-                            }
-                        }
-                    }
-                }
-                
-                if ($pendingCount > 0) {
-                    log_message("Found $pendingCount more pending operations, restarting queue processor", 'DEBUG');
-                    
-                    // Release our lock
-                    if (is_resource($lockFp)) {
-                        flock($lockFp, LOCK_UN);
-                        fclose($lockFp);
-                    }
-                    
-                    // Start a new queue processor immediately
-                    $processorPath = __FILE__;
-                    $command = "nohup php $processorPath " .
-                              ">> /boot/config/plugins/par2protect/queue_processor.log 2>&1 &";
-                    exec($command);
-                    
-                    log_message("Started new queue processor to handle pending operations", 'DEBUG');
-                    exit(0);
-                }
-            }
-        } else {
-            log_message("Maximum concurrent operations limit reached, skipping processing", 'DEBUG');
-        }
-    } else {
-        log_message("No pending operations in queue", 'DEBUG');
-    }
-    
-    // Phase 4.2: Queue management improvements - prioritize operations
-    // If we have pending operations, prioritize them based on type
-    $queueDb->query("
-        UPDATE operation_queue
-        SET updated_at = CASE
-            WHEN operation_type = 'verify' THEN updated_at + 10 -- Lower priority for verify operations
-            ELSE updated_at                -- Keep normal priority for other operations
-        END WHERE status = 'pending'");
-} catch (Exception $e) {
-    log_message("Error processing queue: " . $e->getMessage(), 'ERROR');
-    
-    // If we have an active operation, mark it as failed
-    if (isset($operation) && $operation) {
+
+        $maxConcurrent = $config->get('resource_limits.max_concurrent_operations', 2);
+        $result = $queueDb->query("SELECT COUNT(*) as count FROM operation_queue WHERE status = 'processing'");
+        $processingCount = $queueDb->fetchOne($result)['count'] ?? 0;
+        $logger->debug("Current processing: $processingCount, Max allowed: $maxConcurrent");
+        if ($processingCount >= $maxConcurrent) { $logger->debug("Max concurrent ops reached, waiting..."); sleep(5); continue; }
+
+        $result = $queueDb->query("SELECT * FROM operation_queue WHERE status = 'pending' ORDER BY created_at ASC LIMIT 1");
+        $operation = $queueDb->fetchOne($result);
+        if (!$operation) { $logger->debug("No pending operations found"); break; }
+
+        $logger->debug("Processing operation - ID: " . $operation['id'] . ", Type: " . $operation['operation_type']);
+        $queueDb->query("UPDATE operation_queue SET status = 'processing', started_at = :now, updated_at = :now, pid = :pid WHERE id = :id AND status = 'pending'", [':id' => $operation['id'], ':now' => time(), ':pid' => $myPid]);
+        if ($queueDb->changes() === 0) { $logger->warning("Op ID " . $operation['id'] . " likely picked up by another process, skipping."); continue; }
+
+        $operationStartTime = microtime(true);
+        $opResult = ['success' => false, 'error' => 'Operation failed unexpectedly'];
+        $parameters = json_decode($operation['parameters'], true) ?: [];
+        $operationPath = $parameters['path'] ?? ($parameters['id'] ?? 'N/A');
+
         try {
-            // Clear any alarm that might be set
-            pcntl_alarm(0);
-            
-            // Mark the operation as failed
-            $queueDb->query("
-                UPDATE operation_queue
-                SET status = 'failed',
-                    completed_at = :now,
-                    updated_at = :now,
-                    result = :result
-                WHERE id = :id
-            ", [
-                ':id' => $operation['id'],
-                ':now' => time(),
-                ':result' => json_encode([
-                    'success' => false,
-                    'error' => 'Operation failed with error: ' . $e->getMessage()
-                ])
+            switch ($operation['operation_type']) {
+                case 'protect': // Restored actual logic
+                    $protection = $container->get(Protection::class);
+                    $advancedSettings = $parameters['advanced_settings'] ?? null;
+                    if (!$advancedSettings) $advancedSettings = [];
+                    if (isset($parameters['block_count'])) $advancedSettings['block_count'] = $parameters['block_count'];
+                    if (isset($parameters['block_size'])) $advancedSettings['block_size'] = $parameters['block_size'];
+                    if (isset($parameters['target_size'])) $advancedSettings['target_size'] = $parameters['target_size'];
+                    if (isset($parameters['recovery_files'])) $advancedSettings['recovery_files'] = $parameters['recovery_files'];
+                    if (empty($advancedSettings)) $advancedSettings = null;
+                    $logger->debug("DIAGNOSTIC: Processing protect operation", [ /* context */ ]);
+                    $opResult = $protection->protect(
+                        $parameters['path'], $parameters['redundancy'] ?? null, $parameters['file_types'] ?? null,
+                        $parameters['file_categories'] ?? null, $advancedSettings
+                    );
+                    break;
+
+                case 'verify':
+                    $verification = $container->get(Verification::class);
+                    $verifyMetadata = isset($parameters['verify_metadata']) ? filter_var($parameters['verify_metadata'], FILTER_VALIDATE_BOOLEAN) : false;
+                    $autoRestoreMetadata = isset($parameters['auto_restore_metadata']) ? filter_var($parameters['auto_restore_metadata'], FILTER_VALIDATE_BOOLEAN) : false;
+                    $force = isset($parameters['force']) ? filter_var($parameters['force'], FILTER_VALIDATE_BOOLEAN) : false;
+                    $logger->debug("DIAGNOSTIC: Verification parameters", [ /* context */ ]);
+                    if (isset($parameters['id']) && !empty($parameters['id'])) {
+                        $opResult = $verification->verifyById($parameters['id'], $force, $verifyMetadata, $autoRestoreMetadata);
+                    } else {
+                        $opResult = $verification->verify($parameters['path'], $force, $verifyMetadata, $autoRestoreMetadata);
+                    }
+                    if (isset($opResult['status']) && $opResult['status'] === 'VERIFIED') $opResult['success'] = true;
+                    break;
+
+                case 'repair':
+                    $verification = $container->get(Verification::class);
+                    $restoreMetadata = isset($parameters['restore_metadata']) ? filter_var($parameters['restore_metadata'], FILTER_VALIDATE_BOOLEAN) : true;
+                    $logger->debug("DIAGNOSTIC: Repair parameters", [ /* context */ ]);
+                    if (isset($parameters['id']) && !empty($parameters['id'])) {
+                        $opResult = $verification->repairById($parameters['id'], $restoreMetadata);
+                    } else {
+                        $opResult = $verification->repair($parameters['path'], $restoreMetadata);
+                    }
+                    break;
+
+                case 'remove':
+                    if (!is_database_operation_safe($db, $queueDb, 'remove')) { $logger->warning("Delaying remove op due to DB contention"); sleep(3); }
+                    $protection = $container->get(Protection::class);
+                    $logger->debug("DIAGNOSTIC: Processing remove operation", [ /* context */ ]);
+                    if (isset($parameters['id']) && !empty($parameters['id'])) {
+                        $opResult = $protection->removeById($parameters['id']);
+                    } else {
+                         $opResult = $protection->remove($parameters['path']);
+                    }
+                    break;
+
+                default:
+                    $logger->error("Unknown operation type: " . $operation['operation_type']);
+                    $opResult = ['success' => false, 'error' => 'Unknown operation type'];
+            } // End switch
+
+            // --- Operation Outcome Handling ---
+            $elapsedTime = microtime(true) - $operationStartTime;
+            $minProcessingTime = 5.0;
+            if ($elapsedTime < $minProcessingTime) {
+                $sleepTime = ceil(($minProcessingTime - $elapsedTime) * 1000000);
+                $logger->debug("Operation completed quickly, sleeping " . ($sleepTime / 1000000) . "s", ['sleep_time' => $sleepTime / 1000000]);
+                usleep($sleepTime);
+            }
+
+            $finalDbStatus = isset($opResult['skipped']) && $opResult['skipped'] ? 'skipped' : ($opResult['success'] ? 'completed' : 'failed');
+            $queueDb->query("UPDATE operation_queue SET status = :status, completed_at = :now, updated_at = :now, result = :result WHERE id = :id", [
+                ':id' => $operation['id'], ':status' => $finalDbStatus, ':now' => time(), ':result' => json_encode($opResult)
             ]);
-            
-            log_message("Marked operation as failed due to error - ID: " . $operation['id'], 'DEBUG');
-        } catch (Exception $innerException) {
-            log_message("Failed to mark operation as failed: " . $innerException->getMessage(), 'ERROR');
-        }
-    }
+
+            $eventData = [
+                'id' => $operation['id'], 'operation_type' => $operation['operation_type'], 'type' => $operation['operation_type'],
+                'status' => $finalDbStatus, 'result' => $opResult, 'path' => $parameters['path'] ?? ($opResult['path'] ?? null),
+                'completed_at' => time(), 'completedAt' => time()
+            ];
+            if (!isset($eventData['path']) && isset($parameters['id'])) {
+                 try { $item = $container->get(Protection::class)->getStatusById($parameters['id']); $eventData['path'] = $item['path'] ?? null; } catch (\Exception $_) {}
+            }
+            $eventSystem->addEvent('operation.completed', $eventData);
+            $logger->debug("Operation event emitted - ID: " . $operation['id']);
+
+            $finalDisplayStatus = $opResult['status'] ?? $finalDbStatus;
+            $finalDetails = $opResult['details'] ?? ($opResult['error'] ?? ($opResult['message'] ?? null));
+            $logger->logOperationActivity(ucwords($operation['operation_type']), ucwords(strtolower($finalDisplayStatus)), $eventData['path'], $finalDetails);
+
+            $logger->debug("Operation processed - ID: " . $operation['id'] . ", Type: " . $operation['operation_type'] . ", Status: " . $finalDisplayStatus . ", Duration: " . round(microtime(true) - $operationStartTime, 2) . "s");
+
+        } catch (\Par2Protect\Core\Exceptions\Par2FilesExistException $e) { // Catch specific "files exist" case
+            $errorMessage = $e->getMessage();
+            $logger->debug("Operation skipped (files exist) - ID " . ($operation['id'] ?? 'unknown') . ": " . $errorMessage); // Log as INFO
+
+            if (isset($operation) && is_array($operation)) {
+                $logger->logOperationActivity(ucwords($operation['operation_type'] ?? 'Unknown'), 'Skipped', $parameters['path'] ?? ($parameters['id'] ?? ($operation['id'] ?? 'N/A')), $errorMessage);
+                try {
+                    $opResult = ['success' => true, 'skipped' => true, 'message' => $errorMessage]; // Mark as skipped, but technically not a failure
+                    $logger->debug("Attempting to update DB status to skipped for ID: " . $operation['id']); // ADDED LOG
+                    $queueDb->query("UPDATE operation_queue SET status = 'skipped', completed_at = :now, updated_at = :now, result = :result WHERE id = :id", [ // Set status to 'skipped'
+                        ':id' => $operation['id'], ':now' => time(), ':result' => json_encode($opResult)
+                    ]);
+
+                    // Emit completion event with skipped status
+                    $eventData = [
+                        'id' => $operation['id'], 'operation_type' => $operation['operation_type'], 'type' => $operation['operation_type'],
+                        'status' => 'skipped', 'result' => $opResult, 'path' => $parameters['path'] ?? ($opResult['path'] ?? null),
+                        'completed_at' => time(), 'completedAt' => time()
+                    ];
+                     if (!isset($eventData['path']) && isset($parameters['id'])) {
+                         try { $item = $container->get(Protection::class)->getStatusById($parameters['id']); $eventData['path'] = $item['path'] ?? null; } catch (\Exception $_) {}
+                     }
+                    $logger->debug("Attempting to add completion event for skipped job ID: " . $operation['id']); // ADDED LOG
+                    $eventSystem->addEvent('operation.completed', $eventData);
+                    $logger->debug("Successfully added completion event for skipped job ID: " . $operation['id']); // ADDED LOG
+                    $logger->debug("Operation event emitted for skipped job - ID: " . $operation['id']);
+
+                } catch (\Exception $dbE) {
+                    $logger->error("Failed to mark operation as skipped in DB after Par2FilesExistException: " . $dbE->getMessage());
+                }
+            } else {
+                 // Add this else block for debugging
+                 $logger->warning("Skipped DB update/event emission in Par2FilesExistException catch block because 'operation' variable is not set or not an array.", ['operation_isset' => isset($operation), 'operation_is_array' => is_array($operation ?? null)]);
+            }
+            continue; // Continue to next iteration of the while loop
+
+        } catch (\Exception $e) { // Catch ALL OTHER exceptions during specific operation execution
+            $errorMessage = $e->getMessage();
+            $logger->error("Error processing operation ID " . ($operation['id'] ?? 'unknown') . ": " . $errorMessage, []);
+            if (isset($operation) && is_array($operation)) {
+                 $logger->logOperationActivity(ucwords($operation['operation_type'] ?? 'Unknown'), 'Failed', $parameters['path'] ?? ($parameters['id'] ?? ($operation['id'] ?? 'N/A')), $errorMessage);
+                try {
+                     $queueDb->query("UPDATE operation_queue SET status = 'failed', completed_at = :now, updated_at = :now, result = :result WHERE id = :id", [
+                         ':id' => $operation['id'], ':now' => time(), ':result' => json_encode(['success' => false, 'error' => $errorMessage])
+                     ]);
+                } catch (\Exception $dbE) { $logger->error("Failed to mark operation as failed in DB after exception: " . $dbE->getMessage()); }
+            }
+            continue;
+        } // End main try/catch for operation processing
+
+        $pendingResult = $queueDb->query("SELECT COUNT(*) as count FROM operation_queue WHERE status = 'pending'");
+        $pendingCount = $queueDb->fetchOne($pendingResult)['count'] ?? 0;
+        if ($pendingCount === 0) { $logger->debug("No more pending operations found after processing ID " . $operation['id']); break; }
+        // usleep(100000);
+
+    } // End while loop
+
+} catch (\Exception $e) {
+    $logger->critical("Queue processor encountered a fatal error: " . $e->getMessage());
+    exit(1);
 }
 
-// Lock file cleanup is handled by the shutdown function registered earlier
+exit(0); // Exit normally

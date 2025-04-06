@@ -44,3 +44,6 @@ $router->post('/logs/clear', 'LogEndpoint@clear');
 $router->get('/logs/download', 'LogEndpoint@download');
 // SSE Endpoint
 $router->get('/events', 'EventsEndpoint@getEvents');
+
+// Debug endpoint (temporary for troubleshooting)
+$router->get('/debug/services', 'DebugEndpoint@getServices');

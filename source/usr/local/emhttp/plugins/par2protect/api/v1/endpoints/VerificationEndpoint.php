@@ -13,9 +13,12 @@ class VerificationEndpoint {
     /**
      * VerificationEndpoint constructor
      */
-    public function __construct() {
-        $this->verificationService = new Verification();
-        $this->queueService = new Queue();
+    public function __construct(
+        Verification $verificationService,
+        Queue $queueService
+    ) {
+        $this->verificationService = $verificationService;
+        $this->queueService = $queueService;
     }
     
     /**
@@ -82,6 +85,10 @@ class VerificationEndpoint {
                 
                 $result = $this->queueService->addOperation('verify', $params);
                 
+                // Add refresh_list flag to indicate the protected files list should be refreshed
+                $result['refresh_list'] = true;
+                $result['operation_type'] = 'verify';
+                
                 Response::success($result, 'Verification operation added to queue');
             } else {
                 // Direct execution
@@ -143,6 +150,10 @@ class VerificationEndpoint {
                 }
                 
                 $result = $this->queueService->addOperation('repair', $params);
+                
+                // Add refresh_list flag to indicate the protected files list should be refreshed
+                $result['refresh_list'] = true;
+                $result['operation_type'] = 'repair';
                 
                 Response::success($result, 'Repair operation added to queue');
             } else {

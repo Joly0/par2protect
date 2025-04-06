@@ -10,73 +10,54 @@
 // Load bootstrap
 $bootstrap = require_once(__DIR__ . '/../core/bootstrap.php');
 
-use Par2Protect\Core\Database;
-use Par2Protect\Core\Logger;
-use Par2Protect\Core\Config;
-use Par2Protect\Services\Queue;
+// No need for use statements if getting from container
+// use Par2Protect\Core\Database;
+// use Par2Protect\Core\Logger;
+// use Par2Protect\Core\Config;
+use Par2Protect\Services\Queue; // Keep this one for type hinting if needed, or remove
 
-// Function to log to both the logger and stdout
-function log_message($message, $level = 'INFO', $context = []) {
-    global $logger;
-    global $config;
-    
-    // Add script identifier to context
-    $context['script'] = 'check_schedule';
-    
-    // Log to the logger
-    if ($level === 'INFO') {
-        $logger->info($message, $context);
-    } elseif ($level === 'ERROR') {
-        $logger->error($message, $context);
-    } elseif ($level === 'WARNING') {
-        $logger->warning($message, $context);
-    } elseif ($level === 'DEBUG') {
-        $logger->debug($message, $context);
-    }
-    
-    // Only output DEBUG messages to stdout if debug logging is enabled
-    if ($level !== 'DEBUG' || $config->get('debug.debug_logging', false)) {
-        // Also output to stdout for the cron job to capture
-        echo date('[Y-m-d H:i:s]') . " $level: $message\n";
-    }
-}
 
 // Get components
-$logger = Logger::getInstance();
-$db = Database::getInstance();
-$config = Config::getInstance();
+// Get components from container
+$container = get_container();
+$logger = $container->get('logger');
+$db = $container->get('database');
+$config = $container->get('config');
+
+// Enable console output for this script
+$logger->enableStdoutLogging(true);
 
 // Check debug logging setting
 $debugLoggingEnabled = $config->get('debug.debug_logging', false);
-log_message("Debug logging enabled: " . ($debugLoggingEnabled ? 'true' : 'false'), 'DEBUG', ['setting' => $debugLoggingEnabled]);
+$logger->debug("Debug logging enabled: " . ($debugLoggingEnabled ? 'true' : 'false'), ['setting' => $debugLoggingEnabled]);
 
-$queueService = new Queue();
+$queueService = $container->get(Queue::class);
 
-log_message("Starting schedule checker", 'DEBUG');
+$logger->debug("Starting schedule checker");
 
 // Create a lock file to prevent multiple instances
 $lockFile = '/boot/config/plugins/par2protect/schedule/checker.lock';
 $myPid = getmypid(); 
-log_message("Current process PID: $myPid", 'DEBUG');
+$logger->debug("Current process PID: $myPid");
 
 // Ensure schedule directory exists
 $scheduleDir = dirname($lockFile);
 if (!is_dir($scheduleDir)) {
-    log_message("Creating schedule directory: $scheduleDir", 'DEBUG');
+    $logger->debug("Creating schedule directory: $scheduleDir");
     mkdir($scheduleDir, 0755, true);
 }
 
 // Use file locking to ensure only one process can acquire the lock
 $lockFp = fopen($lockFile, 'c+');
 if (!$lockFp) {
-    log_message("Could not open lock file: $lockFile", 'ERROR');
+    $logger->error("Could not open lock file: $lockFile");
     exit(1);
 }
 
 // Try to get an exclusive lock (non-blocking)
 if (!flock($lockFp, LOCK_EX | LOCK_NB)) {
     // Another process has the lock
-    log_message("Schedule checker already running, exiting", 'DEBUG');
+    $logger->debug("Schedule checker already running, exiting");
     fclose($lockFp);
     exit(0);
 }
@@ -88,7 +69,7 @@ fflush($lockFp);
 
 // Register a shutdown function to release the lock
 register_shutdown_function(function() use ($lockFp, $lockFile, $myPid) {
-    log_message("Cleaning up lock file for PID: $myPid", 'DEBUG');
+    $logger->debug("Cleaning up lock file for PID: $myPid");
     
     // Check if the lock file handle is still valid
     if (is_resource($lockFp)) {
@@ -101,26 +82,26 @@ register_shutdown_function(function() use ($lockFp, $lockFile, $myPid) {
         @unlink($lockFile);
     }
     
-    log_message("Schedule checker finished", 'DEBUG');
+    $logger->debug("Schedule checker finished");
 });
 
-log_message("Lock acquired for PID: $myPid", 'DEBUG');
+$logger->debug("Lock acquired for PID: $myPid");
 
 try {
     // Get the verification schedule from config
     $verifyCron = $config->get('protection.verify_cron', '-1'); // Default to disabled
-    log_message("Verification schedule cron expression: $verifyCron", 'DEBUG');
+    $logger->debug("Verification schedule cron expression: $verifyCron");
     
     // Check if verification is disabled
     if ($verifyCron === '-1') {
-        log_message("Verification schedule is disabled, exiting", 'DEBUG');
+        $logger->debug("Verification schedule is disabled, exiting");
         exit(0);
     }
     
     // Parse the cron expression
     $cronParts = explode(' ', $verifyCron);
     if (count($cronParts) !== 5) {
-        log_message("Invalid cron expression: $verifyCron", 'ERROR');
+        $logger->error("Invalid cron expression: $verifyCron");
         exit(1);
     }
     
@@ -191,16 +172,16 @@ try {
     
     // Check if we should run verification
     if ($shouldRun) {
-        log_message("It's time to run scheduled verification", 'INFO');
+        $logger->info("It's time to run scheduled verification");
         
         // Get all protected items
         $result = $db->query("SELECT * FROM protected_items");
         $items = $db->fetchAll($result);
         
         if (empty($items)) {
-            log_message("No protected items found", 'WARNING');
+            $logger->warning("No protected items found");
         } else {
-            log_message("Found " . count($items) . " protected items", 'INFO');
+            $logger->info("Found " . count($items) . " protected items");
             
             $addedCount = 0;
             $failedCount = 0;
@@ -216,24 +197,24 @@ try {
                     
                     if ($result['success']) {
                         $addedCount++;
-                        log_message("Added verification task for: " . $item['path'], 'DEBUG');
+                        $logger->debug("Added verification task for: " . $item['path']);
                     } else { 
                         $failedCount++;
-                        log_message("Failed to add verification task for: " . $item['path'], 'ERROR');
+                        $logger->error("Failed to add verification task for: " . $item['path']);
                     }
                 } catch (Exception $e) {
                     $failedCount++;
-                    log_message("Error adding verification task for: " . $item['path'] . " - " . $e->getMessage(), 'ERROR');
+                    $logger->error("Error adding verification task for: " . $item['path'] . " - " . $e->getMessage());
                 }
             }
             
-            log_message("Added $addedCount verification tasks to queue, $failedCount failed", 'INFO');
+            $logger->info("Added $addedCount verification tasks to queue, $failedCount failed");
         }
     } else {
-        log_message("Not time to run scheduled verification yet", 'DEBUG');
+        $logger->debug("Not time to run scheduled verification yet");
     }
 } catch (Exception $e) {
-    log_message("Error checking schedule: " . $e->getMessage(), 'ERROR');
+    $logger->error("Error checking schedule: " . $e->getMessage());
     exit(1);
 }
 

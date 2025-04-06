@@ -11,25 +11,22 @@ class EventsEndpoint {
     private $db;
     private $eventSystem;
     
-    public function __construct() {
-        $this->logger = Logger::getInstance();
-        $this->db = Database::getInstance();
-        $this->eventSystem = EventSystem::getInstance();
+    public function __construct(
+        Logger $logger,
+        Database $db,
+        EventSystem $eventSystem
+    ) {
+        $this->logger = $logger;
+        $this->db = $db;
+        $this->eventSystem = $eventSystem;
+        
+        // Endpoint instantiation is not logged to reduce noise
     }
     
     public function getEvents() {
-        // Set headers for SSE
-        header('Content-Type: text/event-stream');
-        header('Cache-Control: no-cache');
-        header('Connection: keep-alive');
-        header('X-Accel-Buffering: no'); // For Nginx
+        // SSE connection establishment is not logged to reduce noise
         
-        // Prevent output buffering
-        if (ob_get_level()) ob_end_clean();
-        
-        // Send an initial comment to establish the connection
-        echo ": " . str_repeat(" ", 2048) . "\n\n";
-        flush();
+        // Headers and initial flush are now handled in api/v1/index.php for the events endpoint
         
         // Get the last event ID from the request
         $lastEventId = isset($_SERVER['HTTP_LAST_EVENT_ID']) ?
@@ -38,10 +35,14 @@ class EventsEndpoint {
         // Keep the connection open but with a time limit to prevent Nginx timeouts
         set_time_limit(0); // Disable PHP time limit
         
-        // Set maximum connection time to 30 seconds (below typical Nginx timeout of 60s)
-        $maxConnectionTime = 30; // seconds
+        // Set maximum connection time to 5 minutes (300 seconds)
+        // This is a balance between keeping connections open longer and
+        // still allowing for reconnection to handle potential issues
+        $maxConnectionTime = 300; // seconds (5 minutes)
         $startTime = time();
         $reconnectDelay = 1; // Recommend 1 second reconnect delay to client
+        $lastKeepAliveTime = $startTime;
+        $keepAliveInterval = 45; // Send keepalive every 45 seconds
         
         // Send initial retry directive to client
         echo "retry: " . ($reconnectDelay * 1000) . "\n\n"; // in milliseconds
@@ -49,6 +50,8 @@ class EventsEndpoint {
         
         // Instead of infinite loop, use a time-limited loop
         while ((time() - $startTime) < $maxConnectionTime) {
+            $currentTime = time();
+            
             // Check for new events
             $events = $this->eventSystem->getEvents($lastEventId);
             
@@ -62,24 +65,47 @@ class EventsEndpoint {
                 flush();
             }
             
-            // Send a keep-alive comment every 10 seconds
-            if ((time() - $startTime) % 10 === 0) {
-                echo ": keepalive " . time() . "\n\n";
+            // Send a keep-alive comment every keepAliveInterval seconds
+            // This helps keep the connection alive through proxies and load balancers
+            if (($currentTime - $lastKeepAliveTime) >= $keepAliveInterval) {
+                // Send a named keepalive event instead of a comment
+                echo "event: keepalive\n";
+                echo "data: " . json_encode(['timestamp' => $currentTime]) . "\n\n";
                 flush();
+                $lastKeepAliveTime = $currentTime;
             }
             
             // Sleep to prevent CPU usage - shorter sleep time for more responsiveness
-            sleep(2);
+            // Using 1 second instead of 2 for more responsive keepalives
+            sleep(1);
             
             // Check if client disconnected
             if (connection_aborted()) {
+                // Client disconnection is not logged to reduce noise
                 break;
             }
         }
         
+        // Log connection timeout - this is now a normal part of the connection lifecycle
+        // rather than an error condition since we're using a longer timeout with keepalives
+        $this->logger->debug("EventsEndpoint::getEvents - SSE connection reached max time limit, sending reconnect message", [
+            'file' => 'EventsEndpoint.php',
+            'method' => 'getEvents',
+            'reason' => 'max_time_reached',
+            'max_time_seconds' => $maxConnectionTime,
+            'actual_time_seconds' => (time() - $startTime),
+            'keepalives_sent' => floor((time() - $startTime) / $keepAliveInterval),
+            '_dashboard' => false
+        ]);
+        
         // Send a reconnect message before closing
+        // This is a controlled reconnection to maintain a healthy connection
         echo "event: reconnect\n";
-        echo "data: {\"message\": \"Connection timeout, please reconnect\"}\n\n";
+        echo "data: " . json_encode([
+            "message" => "Connection max time reached, reconnecting for a fresh connection",
+            "max_time_seconds" => $maxConnectionTime,
+            "keepalive_interval" => $keepAliveInterval
+        ]) . "\n\n";
         flush();
         
         exit();
