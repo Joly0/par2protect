@@ -113,6 +113,32 @@ class Par2CreateCommandBuilder {
         return $this->parityPath;
     }
 
+    /**
+     * Resets the builder state to defaults.
+     *
+     * @return self
+     */
+    public function reset(): self {
+        // Reset PAR2 create specific options
+        $this->redundancy = null;
+        $this->blockSize = null;
+        $this->blockCount = null;
+        $this->recoveryFileCount = null;
+        $this->firstRecoveryNumber = null;
+        $this->uniformFileSize = false;
+        $this->memoryLimit = null;
+
+        // Reset Common options
+        $this->basePath = null;
+        $this->parityPath = null;
+        $this->sourceFiles = [];
+        $this->quiet = true; // Reset to default quiet state
+
+        // Note: Does not reset config/logger references
+
+        return $this;
+    }
+
     // --- Build Method ---
 
     /**

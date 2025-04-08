@@ -226,7 +226,7 @@
                     // Log for debugging
                     // console.log('Adding selected extensions display for', category);
                     // Create the element with clear positioning and display
-                    $input.closest('.extension-picker-container').append($('<div>').attr('id', selectedExtSpanId).addClass('selected-extensions').css({'display': 'block', 'clear': 'both', 'margin-top': '5px', 'font-size': '0.9em', 'color': '#666'}));
+                    $input.closest('.extension-picker-container').append($('<div>').attr('id', selectedExtSpanId).addClass('selected-extensions')); /* Styles moved to CSS */
                 }
                 if ($(`#${dropdownId}`).length === 0) {
                     var $dropdown = $('<div>')
@@ -293,7 +293,7 @@
                     var inputWidth = $input.outerWidth();
                     
                     $(`#${dropdownId}`).css({
-                        'position': 'absolute',
+                        /* 'position': 'absolute', */ /* Position moved to CSS */
                         'top': '28px',
                         'left': 0,
                         'width': inputWidth

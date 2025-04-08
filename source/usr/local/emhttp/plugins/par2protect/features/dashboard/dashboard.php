@@ -190,7 +190,7 @@ $bgcolor = strstr('white,azure', $display['theme']) ? '#f2f2f2' : '#1c1c1c';
                     </div>
                     
                     <!-- Advanced Settings Toggle -->
-                    <div class="form-group">
+                    <div class="form-group" id="advanced-settings-toggle-group">
                         <dl>
                             <dt>
                                 <label class="checkbox-label">
@@ -238,7 +238,6 @@ $bgcolor = strstr('white,azure', $display['theme']) ? '#f2f2f2' : '#1c1c1c';
                         </div>
                         <div class="warning-message">Advanced settings are for experienced users only! Incorrect settings may result in inefficient protection or excessive storage usage.</div>
                     </div>
-                    
                     <button type="button" id="add-to-list-btn" class="btn-primary">Add to List</button>
                 </div>
             </form>

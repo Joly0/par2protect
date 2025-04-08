@@ -1,7 +1,4 @@
-/* Ensure body has scrollbar when needed */
-body {
-    overflow-y: auto !important;
-}
+/* body rule removed - Rely on Dynamix base styles */
 
 .content {
     /* Removed fixed min-height as part of dynamic content height implementation */
@@ -11,19 +8,19 @@ body {
 
 /* Dialog styling */
 .par2-dialog {
-    position: absolute !important;
-    top: -40px !important;
-    left: 50% !important;
-    transform: translateX(-50%) !important;
-    overflow: visible !important;
-    border: 1px solid #ccc;
+    position: absolute; /* Removed !important */
+    top: -40px; /* Removed !important */
+    left: 50%; /* Removed !important */
+    transform: translateX(-50%); /* Removed !important */
+    overflow: visible; /* Removed !important */
+    border: 1px solid var(--par2protect-border-color, #ccc); /* Use variable, fallback to original */
 }
 /* Dashboard Styles */
 
 /* Status Cards */
 .par2-status-card {
     background-color: var(--background);
-    border: 1px solid var(--border-color);
+    border: 1px solid var(--par2protect-border-color);
     border-radius: 4px;
     padding: 15px;
     margin-bottom: 20px;
@@ -59,7 +56,7 @@ body {
 
 .grid-item .label {
     font-size: 0.9em;
-    color: var(--text-muted);
+    color: var(--par2protect-text-muted);
     margin-bottom: 5px;
 }
 
@@ -79,22 +76,22 @@ body {
 }
 
 .health-indicator.good {
-    background-color: #28a745;
+    background-color: var(--success);
     color: white;
 }
 
 .health-indicator.warning {
-    background-color: #ffc107;
+    background-color: var(--warning);
     color: black;
 }
 
 .health-indicator.error {
-    background-color: #dc3545;
+    background-color: var(--danger);
     color: white;
 }
 
 .health-indicator.unknown {
-    background-color: #6c757d;
+    background-color: var(--secondary);
     color: white;
 }
 
@@ -113,32 +110,32 @@ body {
 }
 
 .operation-item.success {
-    border-left-color: #28a745;
+    border-left-color: var(--success);
     background-color: rgba(40, 167, 69, 0.1);
 }
 
 .operation-item.error {
-    border-left-color: #dc3545;
+    border-left-color: var(--danger);
     background-color: rgba(220, 53, 69, 0.1);
 }
 
 .operation-item.warning {
-    border-left-color: #ffc107;
+    border-left-color: var(--warning);
     background-color: rgba(255, 193, 7, 0.1);
 }
 
 .operation-item .success {
-    color: #28a745;
+    color: var(--success);
     font-weight: bold;
 }
 
 .operation-item .error {
-    color: #dc3545;
+    color: var(--danger);
     font-weight: bold;
 }
 
 .operation-item .warning {
-    color: #ffc107;
+    color: var(--warning);
     font-weight: bold;
 }
 
@@ -154,7 +151,7 @@ body {
 .par2-table td {
     padding: 8px;
     text-align: left;
-    border-bottom: 1px solid var(--border-color);
+    border-bottom: 1px solid var(--par2protect-border-color);
 }
 
 .par2-table th {
@@ -183,20 +180,16 @@ body {
 }
 
 .filetree-container {
-    display: block !important;
+    display: block; /* Removed !important */
     text-align: left;
 }
 
 .filetree-container textarea {
-    width: 100% !important;
+    width: 100%; /* Removed !important */
     text-align: left;
 }
 
-.ft {
-    position: static !important;
-    margin-top: 5px;
-    width: 100% !important;
-}
+/* .ft rule removed - Rely on Dynamix base styles */
 
 /* Responsive Design */
 @media (max-width: 768px) {
@@ -209,7 +202,7 @@ body {
 .par2-dialog {
     min-width: 35%;
     max-width: 95vw; /* Allow dialog to scale with viewport width */
-    width: auto !important;
+    width: auto; /* Removed !important */
 }
 
 .par2-dialog .dialog-content {
@@ -235,7 +228,7 @@ body {
 /* Selected Folders Section */
 .selected-folders-section {
     margin-bottom: 20px;
-    border: 1px solid #ddd;
+    border: 1px solid var(--par2protect-border-color, #ddd); /* Use variable, fallback to original */
     border-radius: 4px;
     padding: 10px;
     max-width: 90vw;
@@ -261,7 +254,7 @@ body {
 #selected-folders-table td {
     padding: 8px;
     text-align: left;
-    border-bottom: 1px solid #ddd;
+    border-bottom: 1px solid var(--par2protect-border-color, #ddd); /* Use variable, fallback to original */
 }
 
 #selected-folders-table th {
@@ -271,13 +264,13 @@ body {
 .empty-row td {
     text-align: center;
     padding: 15px;
-    color: #888;
+    color: var(--text-muted, #888); /* Use variable, fallback to original */
 }
 
 /* Configuration Section */
 .configuration-section {
     margin-bottom: 20px;
-    border: 1px solid #ddd;
+    border: 1px solid var(--par2protect-border-color, #ddd); /* Use variable, fallback to original */
     border-radius: 4px;
     padding: 10px;
     max-width: 90vw;
@@ -344,7 +337,7 @@ body {
 }
 
 .warning-message {
-    color: #e74c3c;
+    color: var(--danger, #e74c3c); /* Use variable, fallback to original */
     font-size: 0.9em;
     margin-top: 10px;
 }
@@ -352,8 +345,18 @@ body {
 /* Help Icons */
 .help-icon {
     margin-left: 5px;
-    color: #3498db;
+    color: var(--info, #3498db); /* Use variable, fallback to original */
     cursor: help;
+}
+
+/* Center the 'Add to List' button on the dashboard */
+#add-to-list-btn {
+    display: block; /* Allow margin auto to work */
+    margin-left: auto;
+    margin-right: auto;
+    margin-top: 15px; /* Add some space above */
+    margin-bottom: 15px; /* Add some space below */
+    /* Adjust width if needed, e.g., width: fit-content; or a specific width */
 }
 
 /* Buttons */
@@ -364,12 +367,17 @@ body {
     border: none;
 }
 
-.btn-primary { background-color: #3498db; color: white; }
-.btn-success { background-color: #2ecc71; color: white; }
-.btn-cancel { background-color: #e74c3c; color: white; }
+.btn-primary { background-color: var(--primary, #3498db); color: white; } /* Use variable, fallback to original */
+.btn-success { background-color: var(--success, #2ecc71); color: white; } /* Use variable, fallback to original */
+.btn-cancel { background-color: var(--danger, #e74c3c); color: white; } /* Use variable, fallback to original */
 
 .dialog-footer {
     margin-top: 20px;
     text-align: right;
     width: 95%;
+}
+
+/* Specific margin for the Advanced Settings toggle group */
+#advanced-settings-toggle-group {
+    margin-bottom: 30px;
 }

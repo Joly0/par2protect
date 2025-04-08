@@ -1,6 +1,8 @@
 <?php
 $bgcolor = strstr('white,azure', $display['theme']) ? '#f2f2f2' : '#1c1c1c';
 ?>
+<!-- Load verification options JS -->
+<script src="/plugins/par2protect/features/list/verification-options.js"></script>
 
 <div class="error-message" id="error-display"></div>
 

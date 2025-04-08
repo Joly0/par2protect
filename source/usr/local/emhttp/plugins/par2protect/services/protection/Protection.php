@@ -195,7 +195,8 @@ class Protection {
         try {
             if (!file_exists($path)) { throw ApiException::badRequest("Path does not exist: $path"); }
 
-            $mode = is_dir($path) ? 'directory' : 'file';
+            $storageMode = is_dir($path) ? 'directory' : 'file'; // Mode for storage/internal calls
+            $mode = $storageMode; // Keep $mode for existing logic checks initially
             $isIndividualFilesMode = ($mode === 'directory' && !empty($fileCategories));
 
             if ($redundancy === null) { $redundancy = $this->config->get('protection.default_redundancy', 10); }
@@ -230,22 +231,28 @@ class Protection {
                 $fileCategoryName = implode('-', $fileCategories);
                 $parityDirBase = $this->config->get('protection.parity_dir', '.parity');
                 $par2Path = rtrim($path, '/') . '/' . $parityDirBase . ($fileCategoryName ? '-' . $fileCategoryName : '');
-                $mode = 'Individual Files - ' . $this->formatHelper->getFileCategoryName($fileCategories);
+                $displayMode = 'Individual Files - ' . $this->formatHelper->getFileCategoryName($fileCategories); // Descriptive mode for display/logging
+                // We still use $storageMode ('directory') for internal logic checks below
             } else {
                 $par2Path = $this->operations->createPar2Files($path, $redundancy, $mode, $fileTypes, null, null, $advancedSettings);
             }
 
             // Add item to database
+            // Determine the display mode to store
+            $finalDisplayMode = $isIndividualFilesMode ? $displayMode : $storageMode; // Use descriptive string or simple mode
+
             $protectedItemId = $this->repository->addProtectedItem(
-                $path, $mode, $redundancy, $par2Path,
+                $path, $storageMode, $redundancy, $par2Path, // Use storageMode for internal mode
                 $isIndividualFilesMode ? null : $fileTypes,
                 $isIndividualFilesMode ? $path : null,
                 $isIndividualFilesMode ? $protectedFiles : null,
-                $isIndividualFilesMode ? $fileCategories : null
+                $isIndividualFilesMode ? $fileCategories : null,
+                $finalDisplayMode // Pass the display mode to be stored
             );
 
             // Collect and store metadata
-            $this->metadataManager->storeMetadata($path, $mode, $protectedItemId);
+            // Use storageMode ('directory' or 'file') for metadata collection and pass the specific par2 path
+            $this->metadataManager->storeMetadata($path, $storageMode, $protectedItemId, $par2Path);
 
             // Update size information
             $this->updateSizeInformation($protectedItemId, $path, $fileTypes, $protectedFiles, $par2Path);
@@ -254,7 +261,7 @@ class Protection {
             $this->repository->clearProtectedItemsCache();
 
             $this->logger->info("Protection operation completed", [
-                'path' => $path, 'mode' => $mode, 'status' => 'Success',
+                'path' => $path, 'mode' => ($isIndividualFilesMode ? ($displayMode ?? $storageMode) : $storageMode), 'status' => 'Success', // Use displayMode for logging if available
                 'action' => 'Protect', 'operation_type' => 'protect'
             ]);
 
@@ -317,14 +324,21 @@ class Protection {
             if (!$item) { throw ApiException::notFound("Item not found with ID: $id"); }
 
             $par2Path = $item['par2_path'];
+            $modeForRemoval = $item['display_mode'] ?? $item['mode']; // Use display_mode if available, else internal mode
             $mode = $item['mode'];
             $path = $item['path']; // Get original path for logging/events
 
             // Remove PAR2 files using operations service
-            $this->operations->removePar2Files($par2Path, $mode);
+            $removalSuccess = $this->operations->removePar2Files($par2Path, $modeForRemoval); // Pass the correct mode for removal logic
 
-            // Remove item from database
-            $this->repository->removeItem($id);
+            if ($removalSuccess) {
+                // Remove item from database ONLY if files were successfully removed
+                $this->repository->removeItem($id);
+            } else {
+                // Log error and prevent DB removal if file removal failed
+                $this->logger->error("Failed to remove PAR2 files/directory, database entry will not be removed.", ['id' => $id, 'path' => $path, 'par2Path' => $par2Path]);
+                throw new \Exception("Failed to remove PAR2 files/directory for item ID: $id. Database entry retained.");
+            }
 
             // Clear cache
             $this->repository->clearProtectedItemsCache();

@@ -16,7 +16,7 @@ function initializeFileTreePicker(inputId, rootPath, foldersOnly) {
     updatePathsList($input, $list);
     
     // Ensure the tree container is initially hidden
-    $treeContainer.hide();
+    // $treeContainer.hide(); // Redundant, class handles hiding
     $treeContainer.addClass('force-hidden');
     // Add folders-only class if needed
     if (foldersOnly) {
@@ -41,7 +41,7 @@ function initializeFileTreePicker(inputId, rootPath, foldersOnly) {
         // Force hide with multiple methods
         try {
             // Try multiple approaches to hide the element
-            $treeContainer.hide().css('display', 'none');
+            // $treeContainer.hide(); // Removed .hide() as class handles hiding
             $treeContainer.addClass('force-hidden');
             
             // Force a reflow
@@ -88,7 +88,7 @@ function initializeFileTreePicker(inputId, rootPath, foldersOnly) {
         
         // Toggle based on our tracked state, not the DOM state
         if (isTreeVisible) {
-            $treeContainer.hide().addClass('force-hidden');
+            $treeContainer.addClass('force-hidden'); // Use class to hide
             isTreeVisible = false;
             
             // Remove the document click handler
@@ -102,11 +102,10 @@ function initializeFileTreePicker(inputId, rootPath, foldersOnly) {
         } else {
             // Force show with multiple methods
             try {
-                $treeContainer.show();
-                $treeContainer.removeClass('force-hidden');
-                $treeContainer.css('display', 'block');
-                // Direct DOM manipulation
-                $treeContainer[0].style.display = 'block';
+                // $treeContainer.show(); // Use class manipulation instead
+                $treeContainer.removeClass('force-hidden'); // Use class to show
+                // Explicitly remove any inline style attribute to override potential display:none
+                $treeContainer.removeAttr('style');
                 
                 // Force a reflow
                 void $treeContainer[0].offsetHeight;
@@ -166,7 +165,7 @@ function initializeFileTreePicker(inputId, rootPath, foldersOnly) {
     // Also handle escape key to close the tree
     $(document).on('keydown', function(e) {
         if (e.key === 'Escape' && $treeContainer.is(':visible')) {
-            $treeContainer.hide().addClass('force-hidden');
+            $treeContainer.addClass('force-hidden'); // Use class to hide
             isTreeVisible = false;
             
             // Remove the document click handler
@@ -313,7 +312,7 @@ function updatePathsList($input, $list) {
     const newPathCount = paths.length;
     
     // Add a cursor pointer to the list to indicate it's clickable
-    $list.css('cursor', 'pointer');
+    // $list.css('cursor', 'pointer'); // Style moved to CSS (.selected-paths-list)
     
     if (paths.length === 0) {
         $list.html('<div class="empty-list-message">No paths selected. Click here to select paths.</div>');
@@ -414,10 +413,7 @@ $(document).ready(function() {
         const $treeContainer = $('#' + inputId + '-tree-container');        
         if ($treeContainer.length) {
             try {
-                $treeContainer.hide();
-                $treeContainer.addClass('force-hidden');
-                $treeContainer.css('display', 'none');
-                $treeContainer[0].style.display = 'none';
+                $treeContainer.addClass('force-hidden'); // Use class to hide
                 
                 // Adjust content height for dialog only (filetree closed)
                 if (window.Par2Protect && window.Par2Protect.adjustContentForFiletree) {

@@ -2,6 +2,7 @@
 namespace Par2Protect\Core; // New namespace
 
 use Par2Protect\Core\Database;
+use Par2Protect\Core\Config; // Add Config use statement
 use Par2Protect\Core\Logger;
 use Par2Protect\Core\Traits\ReadsFileSystemMetadata;
 
@@ -13,15 +14,17 @@ class MetadataManager {
 
     private $db;
     private $logger;
-
+    private $config; // Add config property
     /**
      * Constructor
      * @param Database $db Database instance
      * @param Logger $logger Logger instance
+     * @param Config $config Config instance
      */
-    public function __construct(Database $db, Logger $logger) {
+    public function __construct(Database $db, Logger $logger, Config $config) { // Add Config to constructor
         $this->db = $db;
         $this->logger = $logger;
+        $this->config = $config; // Assign config
     }
 
     // --- Metadata Storage ---
@@ -31,11 +34,12 @@ class MetadataManager {
      * Iterates through directories.
      *
      * @param string $path Path to collect metadata for
-     * @param string $mode Mode ('file' or 'directory')
+     * @param string $mode Mode ('file' or 'directory') - determines how to iterate/find files
      * @param int $protectedItemId Protected item ID
+     * @param string|null $par2Path The actual path to the PAR2 directory for this item (null if not applicable)
      * @return bool True on success (at least one file processed), false otherwise.
      */
-    public function storeMetadata(string $path, string $mode, int $protectedItemId): bool
+    public function storeMetadata(string $path, string $mode, int $protectedItemId, ?string $par2Path = null): bool
     {
         $this->logger->debug("Starting metadata collection for path", [
             'path' => $path,
@@ -46,6 +50,7 @@ class MetadataManager {
         $processed = false;
         try {
             if ($mode === 'file') {
+                $this->logger->debug("Processing metadata collection in 'file' mode", ['file_path' => $path]);
                 if (file_exists($path)) {
                     $processed = $this->storeFileMetadata($path, $protectedItemId);
                 } else {
@@ -57,6 +62,8 @@ class MetadataManager {
                      return false;
                  }
                 // For directories, collect metadata for all files within
+                // Normalize par2Path for comparison (ensure trailing slash)
+                $normalizedPar2Path = $par2Path ? rtrim($par2Path, '/') . '/' : null;
                 $iterator = new \RecursiveIteratorIterator(
                     new \RecursiveDirectoryIterator($path, \RecursiveDirectoryIterator::SKIP_DOTS | \RecursiveDirectoryIterator::FOLLOW_SYMLINKS),
                     \RecursiveIteratorIterator::SELF_FIRST
@@ -64,10 +71,21 @@ class MetadataManager {
 
                 foreach ($iterator as $file) {
                     // Skip directories and links for storing metadata, only store for files
+                    // Skip directories, links, and .par2 files within the specific PAR2 directory for this item
                     if ($file->isFile() && !$file->isLink()) {
-                         if ($this->storeFileMetadata($file->getPathname(), $protectedItemId)) {
-                             $processed = true; // Mark as processed if at least one file succeeds
-                         }
+                        $filePath = $file->getPathname();
+                        $fileExtension = strtolower($file->getExtension());
+
+                        // Check if it's a .par2 file AND if it's inside the specific par2Path for this item
+                        if ($fileExtension === 'par2' && $normalizedPar2Path && strpos($filePath, $normalizedPar2Path) === 0) {
+                            $this->logger->debug("Skipping metadata collection for PAR2 file in its own parity directory", ['file' => $filePath, 'par2_dir' => $normalizedPar2Path]);
+                            continue; // Skip this file
+                        }
+
+                        // Proceed with storing metadata for other files
+                        if ($this->storeFileMetadata($filePath, $protectedItemId)) {
+                            $processed = true; // Mark as processed if at least one file succeeds
+                        }
                     }
                 }
             } else {

@@ -35,7 +35,8 @@ class ProtectionRepository {
                 CREATE TABLE protected_items (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     path TEXT NOT NULL,
-                    mode TEXT NOT NULL,
+                    mode TEXT NOT NULL, -- Internal mode ('file', 'directory')
+                    display_mode TEXT, -- User-facing mode string
                     redundancy INTEGER NOT NULL,
                     protected_date DATETIME NOT NULL,
                     last_verified DATETIME,
@@ -99,6 +100,7 @@ class ProtectionRepository {
          // Add columns if they don't exist (migration)
          $this->addColumnIfNotExists('protected_items', 'last_details', 'TEXT');
          $this->addColumnIfNotExists('file_metadata', 'mtime', 'INTEGER');
+         $this->addColumnIfNotExists('protected_items', 'display_mode', 'TEXT'); // Add display_mode column
          // Check/warn about FK
          $this->updateForeignKeyIfNotExists('verification_history', 'protected_items', 'protected_item_id', 'id', 'CASCADE');
     }
@@ -152,10 +154,32 @@ class ProtectionRepository {
     public function findAllProtectedItems() {
         $result = $this->db->query("SELECT * FROM protected_items ORDER BY protected_date DESC");
         $items = $this->db->fetchAll($result);
-        $filteredItems = []; $parentDirsWithIndividualFiles = [];
-        foreach ($items as $item) { if ($item['parent_dir']) { $parentDirsWithIndividualFiles[$item['parent_dir']] = true; } }
-        foreach ($items as $item) { if ($item['mode'] === 'directory' && isset($parentDirsWithIndividualFiles[$item['path']])) { continue; } $filteredItems[] = $item; }
-        return $filteredItems;
+        $filteredItems = [];
+        $addedDirectoryPaths = []; // Keep track of paths added as 'Individual Files' style entries
+
+        // First pass: Add all non-'directory' items and 'Individual Files' style directory items
+        foreach ($items as $item) {
+            // Check if mode indicates an "Individual Files" type entry (even if stored mode is 'directory')
+            // We rely on parent_dir being set for these specific types now.
+            $isIndividualFilesStyle = !empty($item['parent_dir']); // && $item['mode'] === 'directory'; // Mode check might be redundant if parent_dir is reliable
+
+            if ($isIndividualFilesStyle || $item['mode'] === 'file') { // Keep 'file' mode items and 'Individual Files' style items
+                 $filteredItems[] = $item;
+                 // Mark the base path as having an individual entry shown
+                 if (!empty($item['path'])) {
+                      $addedDirectoryPaths[$item['path']] = true;
+                 }
+            }
+        }
+
+        // Second pass: Add 'directory' mode items only if an 'Individual Files' style entry for the same path wasn't already added
+        foreach ($items as $item) {
+             if ($item['mode'] === 'directory' && empty($item['parent_dir']) && !isset($addedDirectoryPaths[$item['path']])) {
+                 // Only add true 'directory' mode items (no parent_dir) if not already covered by an individual style entry
+                 $filteredItems[] = $item;
+             }
+        }
+        return $filteredItems; // Return the combined list
     }
 
     /** Find individual files for a parent directory */
@@ -165,7 +189,7 @@ class ProtectionRepository {
     }
 
     /** Add a new protected item or update if exists */
-    public function addProtectedItem($path, $mode, $redundancy, $par2Path, $fileTypes = null, $parentDir = null, $protectedFiles = null, $fileCategories = null) {
+    public function addProtectedItem($path, $mode, $redundancy, $par2Path, $fileTypes = null, $parentDir = null, $protectedFiles = null, $fileCategories = null, $displayMode = null) { // Add $displayMode parameter
         try {
             $fileTypesJson = $fileTypes ? json_encode($fileTypes) : null;
             $protectedFilesJson = $protectedFiles ? json_encode($protectedFiles) : null;
@@ -177,16 +201,16 @@ class ProtectionRepository {
 
             if ($existingItem) {
                 $this->db->query(
-                    "UPDATE protected_items SET mode = :mode, redundancy = :redundancy, protected_date = :protected_date, par2_path = :par2_path, file_types = :file_types, parent_dir = :parent_dir, protected_files = :protected_files, last_status = 'PROTECTED', last_verified = NULL, last_details = NULL WHERE id = :id",
-                    [':id' => $existingItem['id'], ':mode' => $mode, ':redundancy' => $redundancy, ':protected_date' => $now, ':par2_path' => $par2Path, ':file_types' => $fileTypesJson, ':parent_dir' => $parentDir, ':protected_files' => $protectedFilesJson]
+                    "UPDATE protected_items SET mode = :mode, display_mode = :display_mode, redundancy = :redundancy, protected_date = :protected_date, par2_path = :par2_path, file_types = :file_types, parent_dir = :parent_dir, protected_files = :protected_files, last_status = 'PROTECTED', last_verified = NULL, last_details = NULL WHERE id = :id",
+                    [':id' => $existingItem['id'], ':mode' => $mode, ':display_mode' => $displayMode, ':redundancy' => $redundancy, ':protected_date' => $now, ':par2_path' => $par2Path, ':file_types' => $fileTypesJson, ':parent_dir' => $parentDir, ':protected_files' => $protectedFilesJson] // Add display_mode
                 );
                 $this->logger->debug("Updated existing protected item", ['id' => $existingItem['id'], 'path' => $path]);
                 $this->clearProtectedItemsCache();
                 return $existingItem['id'];
             } else {
                 $this->db->query(
-                    "INSERT INTO protected_items (path, mode, redundancy, protected_date, par2_path, file_types, parent_dir, protected_files, last_status) VALUES (:path, :mode, :redundancy, :protected_date, :par2_path, :file_types, :parent_dir, :protected_files, 'PROTECTED')",
-                    [':path' => $path, ':mode' => $mode, ':redundancy' => $redundancy, ':protected_date' => $now, ':par2_path' => $par2Path, ':file_types' => $fileTypesJson, ':parent_dir' => $parentDir, ':protected_files' => $protectedFilesJson]
+                    "INSERT INTO protected_items (path, mode, display_mode, redundancy, protected_date, par2_path, file_types, parent_dir, protected_files, last_status) VALUES (:path, :mode, :display_mode, :redundancy, :protected_date, :par2_path, :file_types, :parent_dir, :protected_files, 'PROTECTED')",
+                    [':path' => $path, ':mode' => $mode, ':display_mode' => $displayMode, ':redundancy' => $redundancy, ':protected_date' => $now, ':par2_path' => $par2Path, ':file_types' => $fileTypesJson, ':parent_dir' => $parentDir, ':protected_files' => $protectedFilesJson] // Add display_mode
                 );
                 $id = $this->db->lastInsertId();
                 $this->logger->debug("Added new protected item", ['id' => $id, 'path' => $path]);

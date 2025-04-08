@@ -220,6 +220,7 @@
             this.eventSource.addEventListener('queue.update', this.handleQueueUpdate.bind(this));
             this.eventSource.addEventListener('operation.progress', this.handleOperationProgress.bind(this));
             this.eventSource.addEventListener('operation.completed', this.handleOperationCompleted.bind(this));
+            this.eventSource.addEventListener('reconnect', this.handleReconnect.bind(this)); // Add listener for server-sent reconnect
         },
 
         handleKeepAlive: function(event) {
@@ -285,9 +286,10 @@
                 delete P.config.lastOperationStatus[opId];
 
                 // Update the display immediately to show the completed status (if added) or remove if expired
-                if (P.dashboard && P.dashboard.updateOperationsDisplay) {
-                    P.dashboard.updateOperationsDisplay([], null);
-                }
+                // The display will be updated more accurately by the next queue.update event or poll.
+                // if (P.dashboard && P.dashboard.updateOperationsDisplay) {
+                //     P.dashboard.updateOperationsDisplay([], null); // Removed this problematic immediate update
+                // }
                 P.events.trigger('operation.completed', data); // Trigger event for other listeners
 
                 // Set removal timer only if item was actually added for display
@@ -311,8 +313,16 @@
 
             } catch (e) { P.logger.error('Error parsing operation.completed SSE data:', { error: e, data: event.data }); }
         },
+handleReconnect: function(event) {
+    P.logger.debug('Received reconnect event from server. Re-establishing connection.');
+    this.closeEventSource(); // Close the old connection cleanly
+    // Use a minimal delay to allow the browser to fully close the old connection before opening a new one
+    setTimeout(() => {
+        this.initEventSource(); // Start a new connection immediately
+    }, 100);
+}, // Add comma here
 
-        handleSSEError: function() {
+handleSSEError: function() {
             this.closeEventSource();
             if (this.eventSourceRetries < this.maxEventSourceRetries) {
                 this.eventSourceRetries++;

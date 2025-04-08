@@ -1,27 +1,52 @@
 /* Common Styles for PAR2Protect Plugin */
 
 :root {
-    --background: #f8f9fa;
-    --text: #212529;
-    --text-muted: #6c757d;
-    --border-color: #dee2e6;
-    --primary: #007bff;
-    --secondary: #6c757d;
-    --success: #28a745;
-    --danger: #dc3545;
-    --warning: #ffc107;
-    --info: #17a2b8;
-    --pre-background: #f5f5f5;
+    /* Plugin variables inheriting from assumed core Dynamix variables */
+    /* Fallbacks use original values in case core variables aren't available */
+    --background: var(--background-color, #f8f9fa);
+    /* Use plugin-specific variables, inheriting from likely core variables */
+    /* Define plugin vars, inheriting from future core vars w/ light fallback */
+    --par2protect-text: var(--text-color, #212529);
+    --par2protect-text-muted: var(--text-muted-color, #6c757d);
+    --par2protect-border-color: var(--border-color, #c2c2c2); /* Assuming core var name */
+    --primary: var(--primary, #007bff);
+    --secondary: var(--secondary, #6c757d);
+    --success: var(--success, #28a745);
+    --danger: var(--danger, #dc3545);
+    --warning: var(--warning, #ffc107);
+    --info: var(--info, #17a2b8);
+    --pre-background: var(--pre-bg-color, #f5f5f5); /* Assuming a core var name */
+    --table-hover-bg: var(--background-hover, rgba(0, 0, 0, 0.05)); /* Table hover background */
 }
 
 /* Dark mode support */
-.dark-theme {
-    --background: #2d2d2d;
-    --text: #f8f9fa;
-    --text-muted: #adb5bd;
-    --border-color: #495057;
-    --pre-background: #3d3d3d;
+/*
+ * Backward Compatibility: Dark mode support for CURRENT Unraid versions (pre-7.1)
+ * which use the 'dark' class on the body tag.
+ * This block explicitly sets dark theme values for plugin variables.
+ * It should become inactive when Unraid 7.1+ (using .Theme--{name}:root) is released,
+ * as the :root definitions above will inherit the correct core variable values.
+ */
+/* Dark mode support for CURRENT Unraid versions (body.dark) */
+body.dark {
+    /* Explicitly set plugin variables to dark values */
+    --background: #2d2d2d; /* Keep overriding background for now */
+    --par2protect-text: #f8f9fa;
+    --par2protect-text-muted: #adb5bd;
+    --par2protect-border-color: #495057;
+    --pre-background: #3d3d3d; /* Keep overriding pre-background */
+    --table-hover-bg: rgba(255, 255, 255, 0.075); /* Keep overriding hover */
+    /* Explicitly set semantic colors for current dark mode if needed */
+    /* Example: --primary: #some-dark-primary; */
+    /* For now, let them inherit from :root */
 }
+
+/*
+ * NOTE: No separate .Theme--black:root block is strictly needed now,
+ * as the :root definitions attempt to inherit future core variables.
+ * Add overrides within .Theme--black:root etc. ONLY if specific adjustments
+ * are needed for the *new* themes beyond what the core variables provide.
+ */
 
 /* Error Message */
 .error-message {
@@ -69,7 +94,7 @@ button:disabled {
 .form-group select {
     width: 100%;
     padding: 8px;
-    border: 1px solid var(--border-color);
+    border: 1px solid var(--par2protect-border-color);
     border-radius: 4px;
     background-color: var(--background);
 }
@@ -108,8 +133,8 @@ button:disabled {
     padding: 10px;
     background-color: rgba(0,0,0,0.05);
     border-radius: 4px;
-    text-align: center !important;
-    color: var(--text-muted);
+    text-align: center; /* Removed !important */
+    color: var(--par2protect-text-muted);
 }
 
 /* Loading Indicator */
@@ -213,22 +238,22 @@ button:disabled {
     padding: 10px;
     background-color: var(--pre-background);
     border-radius: 4px;
-    color: var(--text);
+    color: var(--par2protect-text);
 }
 
 /* SweetAlert Fixes */
 .sweet-overlay {
-    z-index: 10000 !important; /* Ensure overlay is above other elements */
+    z-index: 10000; /* Removed !important - Keep z-index if needed, test */
 }
 
 .sweet-alert {
-    z-index: 10001 !important; /* Ensure alert is above overlay */
+    z-index: 10001; /* Removed !important - Keep z-index if needed, test */
 }
 
 /* Redundancy Options Dialog */
 .redundancy-options-dialog {
-    width: 500px !important;
-    margin-left: -250px !important;
+    width: 500px; /* Removed !important */
+    margin-left: -250px; /* Removed !important */
 }
 
 .redundancy-options {
@@ -252,7 +277,7 @@ button:disabled {
 
 /* Fix for SweetAlert cleanup issues */
 body.swal2-shown {
-    overflow-y: visible !important; /* Prevent body from being locked */
+    overflow-y: visible; /* Removed !important */
 }
 
 /* Ensure protected files list is clickable */

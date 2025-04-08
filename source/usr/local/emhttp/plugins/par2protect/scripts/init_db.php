@@ -48,7 +48,8 @@ try {
         CREATE TABLE IF NOT EXISTS protected_items (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             path TEXT NOT NULL,
-            mode TEXT NOT NULL,                    -- 'file' or 'directory'
+            mode TEXT NOT NULL,                    -- Internal mode ('file', 'directory')
+            display_mode TEXT,                     -- User-facing mode string
             redundancy INTEGER NOT NULL,           -- redundancy percentage
             protected_date DATETIME NOT NULL,
             last_verified DATETIME,

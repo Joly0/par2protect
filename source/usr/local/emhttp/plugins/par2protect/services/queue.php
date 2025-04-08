@@ -171,16 +171,23 @@ class Queue {
                     $this->queueDb->rollback();
                 }
                 throw $e;
-            } catch (\Exception $e) {
+            } catch (\Exception $e) { // Catch generic exceptions last
                 if ($this->queueDb->inTransaction()) {
                     $this->queueDb->rollback();
                 }
-                
-                $this->logger->error("Failed to add operation to queue", [
-                    'error' => $e->getMessage()
+
+                // Log the original exception details for better debugging
+                $this->logger->error("Caught generic exception while adding operation to queue", [
+                    'exception_class' => get_class($e),
+                    'original_message' => $e->getMessage(),
+                    'file' => $e->getFile(),
+                    'line' => $e->getLine(),
+                    // Optionally include stack trace if needed, but can be verbose
+                    // 'trace' => $e->getTraceAsString()
                 ]);
-                
-                throw new ApiException("Failed to add operation to queue: " . $e->getMessage());
+
+                // Re-throw as ApiException for consistent API error handling
+                throw new ApiException("Failed to add operation to queue: " . $e->getMessage(), 500, $e); // Pass original exception
             }
         }
         
@@ -261,21 +268,21 @@ class Queue {
      */
     public function getActiveOperations() {
         try {
-            // Get processing operations and recently completed operations (within the last 30 seconds)
-            $recentTime = time() - 30; // 30 seconds ago
-            
+            // Include processing, pending, and recently finished (within 60 seconds) operations
+            $recentTime = time() - 60; // 60 seconds ago
+
             $result = $this->queueDb->query(
-                 // Select only genuinely active operations
                 "SELECT * FROM operation_queue
-                WHERE status = 'processing' OR status = 'pending'
+                WHERE status IN ('processing', 'pending')
+                   OR (status IN ('completed', 'failed', 'skipped', 'cancelled') AND completed_at >= :recent_time)
                 ORDER BY
                     CASE
                         WHEN status = 'pending' THEN 0
                         WHEN status = 'processing' THEN 1
-                        ELSE 2 -- Should not happen with WHERE clause
+                        ELSE 2 -- Recently finished statuses
                     END,
-                    created_at ASC", // Process oldest pending first
-                [] // No parameters needed now
+                    created_at ASC", // Keep secondary sort by creation time
+                [':recent_time' => $recentTime] // Bind the recent time parameter
             );
             
             $operations = $this->queueDb->fetchAll($result);
@@ -434,13 +441,25 @@ class Queue {
         
         // Only start a new processor if one isn't already running
         if (!$processorRunning) {
-            // Execute the queue processor script in the background
+            // Get the temporary log directory from config
+            $tmpLogPathSetting = $this->config->get('logging.tmp_path', '/tmp/par2protect/logs/par2protect.log');
+            $tmpLogDir = dirname($tmpLogPathSetting);
+            $queueLogFile = $tmpLogDir . '/queue_processor.log';
+
+            // Ensure the temporary log directory exists
+            if (!is_dir($tmpLogDir)) {
+                @mkdir($tmpLogDir, 0755, true);
+                $this->logger->debug("Created temporary log directory for queue processor", ['directory' => $tmpLogDir]);
+            }
+
+            // Execute the queue processor script in the background, logging to tmp
             $command = "nohup php $processorPath " .
-                      ">> /boot/config/plugins/par2protect/queue_processor.log 2>&1 &";
+                      ">> " . escapeshellarg($queueLogFile) . " 2>&1 &"; // Use escapeshellarg for safety
             exec($command);
-            
+
             $this->logger->debug("Queue processor started", [
-                'command' => $command
+                'command' => $command,
+                'log_file' => $queueLogFile
             ]);
         }
     }

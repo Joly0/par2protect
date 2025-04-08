@@ -430,28 +430,32 @@
                     P.setLoading(true);
                     P.logger.debug("Sending remove request", { count: itemsToRemove.length, isSingle: !!singlePath });
 
-                    // Determine parameters based on single vs bulk
-                    const parametersToSend = singlePath ? itemsToRemove[0] : { items: itemsToRemove };
-                    const successMessage = singlePath ? 'Item queued for removal.' : `${itemsToRemove.length} item(s) added to queue for removal.`;
+                    // Loop through items and queue removal individually
+                    let successCount = 0;
+                    let failCount = 0;
+                    let promises = [];
 
-                    P.queueManager.addToQueue('remove', parametersToSend,
-                        function(response) { // Success callback
-                            P.logger.debug('Removal added to queue successfully', { response, paramsSent: parametersToSend });
-                            swal({ title: 'Removal Queued', text: successMessage, type: 'success' });
-                            setTimeout(() => list.refreshProtectedList(false), 1000);
-                            P.setLoading(false);
-                        },
-                        function(error) { // Error callback
-                            P.logger.warning('Queue add reported error for removal', { error, paramsSent: parametersToSend });
-                            // Handle specific errors like "already in queue" if the backend supports it for single items
-                            if (typeof error === 'string' && error.includes("already in queue")) {
-                                swal({ title: 'Already Queued', text: error, type: 'info' });
-                            } else {
-                                swal({ title: 'Error', text: P.escapeHtml(error), type: 'error' });
-                            }
-                            P.setLoading(false);
+                    itemsToRemove.forEach(item => {
+                        const params = { id: item.id, path: item.path }; // Parameters for a single item
+                        promises.push(new Promise((resolve, reject) => {
+                            P.queueManager.addToQueue('remove', params,
+                                (response) => { successCount++; resolve(response); },
+                                (error) => { failCount++; P.logger.error('Failed to queue removal', { item, error }); reject(error); }
+                            );
+                        }));
+                    });
+
+                    // Wait for all queue additions to complete
+                    Promise.allSettled(promises).then(() => {
+                        P.setLoading(false);
+                        let message = '';
+                        if (successCount > 0) message += `${successCount} removal task(s) added to the queue. `;
+                        if (failCount > 0) message += `${failCount} task(s) failed to queue.`;
+                        swal({ title: failCount > 0 ? 'Removal Queued (with errors)' : 'Removal Queued', text: message, type: failCount > 0 ? 'warning' : 'success' });
+                        if (successCount > 0) {
+                             setTimeout(() => list.refreshProtectedList(false), 1000); // Refresh if any succeeded
                         }
-                    );
+                    });
                 }
             });
         },
@@ -466,38 +470,12 @@
         },
 
         // Show verification options dialog
+        // Show verification options dialog (Placeholder - logic will be in verification-options.js)
         showVerificationOptionsDialog: function(items, force) {
-            $.get('/plugins/par2protect/features/list/verification-options-dialog.php', function(dialogHtml) {
-                swal({
-                    title: 'Verification Options', text: `Select options for verifying ${items.length} item(s):`, html: dialogHtml,
-                    type: 'info', showCancelButton: true, confirmButtonText: 'Start Verification', cancelButtonText: 'Cancel', closeOnConfirm: false
-                }, function(isConfirm) {
-                    if (isConfirm) {
-                        const verifyMetadata = $('#verify-metadata-checkbox').is(':checked');
-                        const autoRestoreMetadata = $('#auto-restore-metadata-checkbox').is(':checked');
-                        P.setLoading(true);
-                        P.logger.debug("Starting verification for selected items", { count: items.length, verifyMetadata, autoRestoreMetadata, force });
-                        let successCount = 0; let failCount = 0; let promises = [];
-                        items.forEach(item => {
-                            const params = { id: item.id, path: item.path, verify_metadata: verifyMetadata, auto_restore_metadata: autoRestoreMetadata, force: force };
-                            promises.push(new Promise((resolve, reject) => {
-                                P.queueManager.addToQueue('verify', params,
-                                    (response) => { successCount++; resolve(response); },
-                                    (error) => { failCount++; P.logger.error('Failed to queue verification', { item, error }); reject(error); }
-                                );
-                            }));
-                        });
-                        Promise.allSettled(promises).then(() => {
-                            P.setLoading(false);
-                            let message = '';
-                            if (successCount > 0) message += `${successCount} verification task(s) added to the queue. `;
-                            if (failCount > 0) message += `${failCount} task(s) failed to queue.`;
-                            swal({ title: failCount > 0 ? 'Verification Queued (with errors)' : 'Verification Queued', text: message, type: failCount > 0 ? 'warning' : 'success' });
-                            list.refreshProtectedList(false);
-                        });
-                    }
-                });
-            }).fail(function() { swal('Error', 'Could not load verification options dialog.', 'error'); });
+             // This function will be overridden or handled by verification-options.js
+             P.logger.debug("Placeholder showVerificationOptionsDialog called. Logic should be in verification-options.js");
+             // Intentionally left blank - the actual dialog showing logic will be restored
+             // from the user-provided verification-options.js code.
         },
 
         // Show error details popup

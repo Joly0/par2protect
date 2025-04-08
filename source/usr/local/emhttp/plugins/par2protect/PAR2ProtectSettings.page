@@ -1,8 +1,8 @@
 Menu="Utilities"
-Title="PAR2Protect Settings"
-Icon="shield"
+Title="PAR2Protect"
 Type="xmenu"
 Code="0"
+Icon="Par2_Logo_Settings.png"
 ---
 <link type="text/css" rel="stylesheet" href="/plugins/dynamix/styles/jquery.sweetalert.css">
 <link type="text/css" rel="stylesheet" href="/plugins/par2protect/features/settings/settings.css">

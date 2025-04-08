@@ -808,7 +808,7 @@
 
                 const parameters = {
                     path: path,
-                    mode: settings.mode === 'file' ? 'Individual Files' : 'directory',
+                    mode: settings.mode === 'file' ? 'file' : 'directory',
                     redundancy: settings.redundancy,
                     file_types: selectedTypes,
                     file_categories: selectedCategories

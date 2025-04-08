@@ -15,7 +15,8 @@ class FormatHelper {
         return [
             'id' => $item['id'],
             'path' => $item['path'],
-            'mode' => $item['mode'],
+            // Use display_mode if available, otherwise fall back to internal mode
+            'mode' => $item['display_mode'] ?? $item['mode'],
             'redundancy' => $item['redundancy'],
             'protected_date' => $item['protected_date'],
             'last_verified' => $item['last_verified'],

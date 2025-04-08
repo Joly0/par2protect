@@ -51,6 +51,18 @@ class Config {
                 'health_check_interval' => [
                     'default' => 60,
                     'description' => 'Interval in seconds between database connection health checks'
+                ],
+                'max_retries' => [
+                    'default' => 10,
+                    'description' => 'Maximum number of retries for database operations on lock'
+                ],
+                'initial_retry_delay' => [
+                    'default' => 100,
+                    'description' => 'Initial delay in milliseconds before retrying a locked database operation'
+                ],
+                'max_retry_delay' => [
+                    'default' => 2000,
+                    'description' => 'Maximum delay in milliseconds between retries for locked database operations'
                 ]
             ]
         ],

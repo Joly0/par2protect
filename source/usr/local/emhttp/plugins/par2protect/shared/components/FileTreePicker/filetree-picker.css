@@ -1,23 +1,23 @@
 /* Checkbox styling */
 .directory-checkbox {
-    margin-right: 5px !important;
-    vertical-align: middle !important;
+    margin-right: 5px; /* Removed !important */
+    vertical-align: middle; /* Removed !important */
     /* Remove transitions for immediate visual feedback */
-    transition: none !important;
+    transition: none; /* Removed !important */
     /* Ensure checkboxes are always clickable unless explicitly disabled */
-    pointer-events: auto !important;
+    pointer-events: auto; /* Removed !important */
 }
 
 /* Subtle styling for disabled checkboxes */
 .directory-checkbox:disabled {
     opacity: 0.5;
-    cursor: not-allowed !important;
-    pointer-events: none !important;
+    cursor: not-allowed; /* Removed !important */
+    pointer-events: none; /* Removed !important */
 }
 
 /* Make sure the filetree background matches the Unraid theme */
 .fileTree {
-    background-color: inherit !important;
+    background-color: inherit; /* Removed !important */
 }
 
 /* Ensure the filetree has proper spacing */
@@ -36,7 +36,7 @@
 
 /* Selected paths list */
 .selected-paths-list {
-    border: 1px solid #ccc;
+    border: 1px solid var(--par2protect-border-color, #ccc); /* Use variable, fallback */
     border-radius: 4px;
     padding: 8px;
     margin-bottom: 8px;
@@ -49,12 +49,12 @@
 }
 
 .selected-paths-list:hover {
-    border-color: #4CAF50;
+    border-color: var(--success, #4CAF50); /* Use variable, fallback */
 }
 
 /* Empty list message */
 .empty-list-message {
-    color: #999;
+    color: var(--text-muted, #999); /* Use variable, fallback */
     font-style: italic;
     padding: 10px 0;
     text-align: center;
@@ -81,7 +81,7 @@
 .remove-path {
     background: none;
     border: none;
-    color: #f44336;
+    color: var(--danger, #f44336); /* Use variable, fallback */
     cursor: pointer;
     font-size: 14px;
     padding: 0 5px;
@@ -91,7 +91,7 @@
 .filetree-container {
     margin-top: 8px;
     margin-bottom: 15px;
-    border: 1px solid #ccc;
+    border: 1px solid var(--par2protect-border-color, #ccc); /* Use variable, fallback */
     border-radius: 4px;
     padding: 10px;
     max-height: 300px;
@@ -100,7 +100,7 @@
 
 /* Hide file items in folders-only mode */
 .folders-only-mode li.file {
-    display: none !important;
+    display: none; /* Removed !important */
 }
 
 /* Force hidden class - use !important to override any other styles */

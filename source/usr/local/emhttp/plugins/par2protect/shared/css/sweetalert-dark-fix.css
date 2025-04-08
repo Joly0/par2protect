@@ -4,22 +4,31 @@
  * It allows the colors from dynamix-black.css to take effect and fixes success icon display issues
  */
 
-/* Remove the color property from h2 and p elements in sweet-alert */
+/* Force theme text color for SweetAlert title and paragraph */
 .sweet-alert h2 {
-    color: inherit !important; /* This will inherit the color from dynamix-black.css */
+    color: var(--par2protect-text);
 }
 
 .sweet-alert p {
-    color: inherit !important; /* This will inherit the color from dynamix-black.css */
+    color: var(--par2protect-text);
 }
 
+/* Explicit dark theme overrides for SweetAlert text */
+body.Theme--black .sweet-alert h2,
+body.Theme--gray .sweet-alert h2,
+body.Theme--black .sweet-alert p,
+body.Theme--gray .sweet-alert p {
+    color: #f8f9fa !important; /* Directly set dark text color */
+}
+
+ 
 /* Fix for success icon in all modes */
 .sweet-alert .sa-icon.sa-success::before,
 .sweet-alert .sa-icon.sa-success::after,
 .sweet-alert .sa-icon.sa-success .sa-fix,
 .sweet-alert .sa-icon.sa-success .sa-placeholder {
-    background: transparent !important;
-    background-color: transparent !important;
+    background: transparent; /* Removed !important */
+    background-color: transparent; /* Removed !important */
 }
 
 /* Fix for the placeholder circle */
@@ -29,6 +38,6 @@
 
 /* Ensure the checkmark lines are visible */
 .sweet-alert .sa-icon.sa-success .sa-line {
-    background-color: #A5DC86 !important;
+    background-color: var(--success-light, #A5DC86); /* Removed !important */
     z-index: 3;
 }

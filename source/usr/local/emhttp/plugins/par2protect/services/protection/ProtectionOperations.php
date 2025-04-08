@@ -88,7 +88,45 @@ class ProtectionOperations {
          $this->logger->debug("Starting protectIndividualFiles", compact('path', 'redundancy', 'fileTypes', 'fileCategories', 'advancedSettings'));
          $allProtectedFiles = []; $errors = [];
 
-         $targetExtensions = $this->formatHelper->getTargetExtensions($fileTypes, $fileCategories);
+        // Define base categories (copied from features/settings/settings.php)
+        $baseCategories = [
+            'documents' => ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'txt', 'rtf', 'odt', 'ods', 'odp'],
+            'images' => ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'tiff', 'webp', 'svg'],
+            'videos' => ['mp4', 'avi', 'mkv', 'mov', 'wmv', 'flv', 'webm', 'mpeg', 'mpg'],
+            'audio' => ['mp3', 'wav', 'aac', 'flac', 'ogg', 'm4a', 'wma'],
+            'archives' => ['zip', 'rar', '7z', 'tar', 'gz', 'bz2', 'iso'],
+            'code' => ['php', 'js', 'css', 'html', 'py', 'java', 'c', 'cpp', 'cs', 'rb', 'go', 'swift', 'json', 'xml', 'yml', 'yaml', 'sh', 'bat']
+        ];
+
+        $resolvedExtensions = [];
+
+        // Resolve extensions from categories
+        if (!empty($fileCategories) && is_array($fileCategories)) {
+            foreach ($fileCategories as $category) {
+                // Ensure category name is a string before using it as an array key or in config lookup
+                if (!is_string($category)) continue;
+                
+                if (isset($baseCategories[$category])) {
+                    // Add base extensions for the category
+                    $resolvedExtensions = array_merge($resolvedExtensions, $baseCategories[$category]);
+                    // Add custom extensions for the category from config
+                    $customExt = $this->config->get('file_types.custom_extensions.' . $category, []);
+                    if (is_array($customExt)) {
+                         $resolvedExtensions = array_merge($resolvedExtensions, $customExt);
+                    }
+                }
+            }
+        }
+
+        // Add extensions directly specified in fileTypes
+        if (!empty($fileTypes) && is_array($fileTypes)) {
+            // Ensure file types are strings before merging
+            $stringFileTypes = array_filter($fileTypes, 'is_string');
+            $resolvedExtensions = array_merge($resolvedExtensions, $stringFileTypes);
+        }
+
+        // Clean up the list: remove duplicates, filter empty values, ensure lowercase
+        $targetExtensions = array_map('strtolower', array_unique(array_filter($resolvedExtensions)));
          if (empty($targetExtensions)) { return ['success' => false, 'protected_files' => [], 'error' => 'No file types selected for protection.']; }
 
          $fileCategoryName = $this->formatHelper->getFileCategoryName($fileCategories ?: $fileTypes);
@@ -207,28 +245,35 @@ class ProtectionOperations {
         $this->logger->debug("Attempting to remove PAR2 files", compact('par2Path', 'mode'));
         $success = true;
         try {
+            $parityDirToRemove = null;
+
+            // Determine the directory to remove based on mode and path
             if (strpos($mode, 'Individual Files') === 0 && is_dir($par2Path)) {
-                $this->logger->debug("Removing individual PAR2 files directory", ['directory' => $par2Path]);
-                if (file_exists($par2Path)) {
-                    $command = "rm -rf " . escapeshellarg($par2Path);
-                    exec($command, $output, $returnCode);
-                    if ($returnCode !== 0) { $this->logger->error("Failed to remove PAR2 directory", ['directory' => $par2Path, 'return_code' => $returnCode, 'output' => implode("\n", $output)]); $success = false; }
-                    else { $this->logger->info("Successfully removed PAR2 directory", ['directory' => $par2Path]); }
-                } else { $this->logger->warning("PAR2 directory not found, nothing to remove.", ['directory' => $par2Path]); }
-            } elseif (is_file($par2Path)) {
-                // For standard file/directory protection, remove the entire .parity directory using find -delete
-                $parityDirToRemove = dirname($par2Path);
-                $this->logger->debug("Attempting to remove PAR2 directory using find -delete", ['directory' => $parityDirToRemove]);
+                // Mode is "Individual Files - ...", par2Path is the specific .parity-category directory
+                $parityDirToRemove = $par2Path;
+                $this->logger->debug("Identified individual PAR2 files directory for removal", ['directory' => $parityDirToRemove]);
+            } elseif ($mode === 'directory' && is_file($par2Path)) {
+                 // Mode is 'directory', par2Path is a file inside the standard .parity directory
+                 $parityDirToRemove = dirname($par2Path);
+                 $this->logger->debug("Identified standard PAR2 directory for removal", ['directory' => $parityDirToRemove]);
+            } elseif ($mode === 'file' && is_file($par2Path)) {
+                 // Mode is 'file', par2Path is the specific .par2 file. We remove its directory.
+                 $parityDirToRemove = dirname($par2Path);
+                 $this->logger->debug("Identified PAR2 directory for single file removal", ['directory' => $parityDirToRemove]);
+            }
+
+            // If we identified a directory to remove, proceed with find -delete
+            if ($parityDirToRemove) {
                 // Safety check: Ensure we are targeting a directory that looks like a parity directory
                 $parityDirBaseName = $this->config->get('protection.parity_dir', '.parity');
-                if (basename($parityDirToRemove) === $parityDirBaseName || strpos($parityDirToRemove, '/' . $parityDirBaseName . '-') !== false) {
+                if (basename($parityDirToRemove) === $parityDirBaseName || strpos(basename($parityDirToRemove), $parityDirBaseName . '-') === 0) {
                     if (is_dir($parityDirToRemove)) {
                         // Construct the find command: find 'directory' -depth -delete
-                        // -depth ensures files/subdirs are deleted before the parent
                         $command = "/usr/bin/find " . escapeshellarg($parityDirToRemove) . " -depth -delete";
                         $this->logger->debug("Executing find -delete command", ['command' => $command]);
                         exec($command, $output, $returnCode);
                         $this->logger->debug("Find -delete command finished", ['command' => $command, 'return_code' => $returnCode, 'output' => implode("\n", $output)]);
+
                         // Check if the directory still exists after the command
                         clearstatcache(true, $parityDirToRemove); // Clear stat cache before checking
                         if (is_dir($parityDirToRemove)) {
@@ -241,19 +286,20 @@ class ProtectionOperations {
                                  $success = false;
                              }
                         } else {
-                             // Directory is gone, consider it success regardless of find's return code (sometimes find returns non-zero even on success with -delete)
+                             // Directory is gone, consider it success
                              $this->logger->info("Successfully removed PAR2 directory using find -delete", ['directory' => $parityDirToRemove]);
                              $success = true;
                         }
                     } else {
-                         $this->logger->warning("Parity directory to remove does not exist", ['directory' => $parityDirToRemove]);
+                         $this->logger->warning("Parity directory to remove does not exist, considering removal successful.", ['directory' => $parityDirToRemove]);
                          $success = true; // Directory doesn't exist, so removal is effectively successful
                     }
                 } else {
-                     $this->logger->error("Safety check failed: Attempted find -delete on directory not matching expected parity structure", ['directory' => $parityDirToRemove, 'par2Path' => $par2Path]);
+                     $this->logger->error("Safety check failed: Attempted find -delete on directory not matching expected parity structure", ['directory' => $parityDirToRemove, 'par2Path' => $par2Path, 'mode' => $mode]);
                      $success = false;
                 }
             } else {
+                // If no directory was identified (e.g., path not found, invalid mode)
                 $this->logger->warning("PAR2 path not found or invalid mode for removal", compact('par2Path', 'mode'));
                 $success = false;
             }

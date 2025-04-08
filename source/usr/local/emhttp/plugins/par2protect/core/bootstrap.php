@@ -119,7 +119,7 @@ $container->register('eventSystem', function ($c) {
 
 // Register Consolidated Metadata Manager
 $container->register(MetadataManager::class, function ($c) {
-    return new MetadataManager($c->get('database'), $c->get('logger'));
+    return new MetadataManager($c->get('database'), $c->get('logger'), $c->get('config')); // Add config service
 });
 
 // Register Services

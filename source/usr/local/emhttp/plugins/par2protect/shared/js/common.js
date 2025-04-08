@@ -294,6 +294,8 @@ if (window.Par2ProtectScriptsLoaded && window.Par2ProtectScriptsLoaded.common) {
             });
         };
         
+        /* Removed fixSweetAlertTextColor function */
+        
         // Initialize logger when document is ready
         $(document).ready(function() {
             P.initializeLogger();

@@ -1,5 +1,19 @@
 /* Protected Files List Styles */
 
+/* Ensure verification dialog appears on top */
+#verification-options-dialog {
+    position: fixed; /* Or absolute, depending on context, fixed is often used for modals */
+    z-index: 1050; /* High value to ensure it's above other content, adjust if needed */
+    /* Add other necessary modal styling like background, position, etc. if not already present */
+    /* Example positioning: */
+    /* top: 50%;
+       left: 50%;
+       transform: translate(-50%, -50%);
+       background-color: #fff;
+       padding: 20px;
+       border: 1px solid #ccc; */
+}
+
 .protected-files-list {
     margin: 0;
     padding: 0;
@@ -44,12 +58,12 @@
 .protected-files-table th {
     padding: 8px;
     text-align: left;
-    border-bottom: 1px solid var(--border-color);
+    border-bottom: 1px solid var(--par2protect-border-color);
 }
 
 .protected-files-table td {
     padding: 8px;
-    text-align: left;
+    /*text-align: left; */
 }
 
 .protected-files-table th {
@@ -64,7 +78,7 @@
 /* Table Columns */
 .checkbox-column {
     width: 40px;
-    text-align: center !important;
+    text-align: center; /* Removed !important */
 }
 
 .status-column {
@@ -114,10 +128,6 @@
     }
 }
 
-.select-item {
-    margin: 0px 0px 0px 12px;
-}
-
 /* Error Info Icon */
 .error-info-icon {
     color: var(--danger);
@@ -159,22 +169,22 @@
 /* File type styling */
 .file-type, .file-types {
     display: inline-block;
-    background-color: #f0f0f0;
+    background-color: var(--background-alt, #f0f0f0); /* Assuming an alt background, fallback */
     border-radius: 3px;
     padding: 2px 5px;
     margin-left: 5px;
     font-size: 0.85em;
-    color: #666;
+    color: var(--text-muted, #666); /* Use variable, fallback */
 }
 
 .file-types {
-    background-color: #e6f7ff;
-    color: #0066cc;
+    background-color: var(--info-bg, #e6f7ff); /* Assuming an info background, fallback */
+    color: var(--info, #0066cc); /* Use variable, fallback */
 }
 
 /* File type info icon */
 .file-type-info {
-    color: #0066cc;
+    color: var(--info, #0066cc); /* Use variable, fallback */
     margin-left: 5px;
     cursor: pointer;
     font-size: 14px;
@@ -187,7 +197,7 @@
 
 /* Size info icon */
 .size-info-icon {
-    color: #0066cc;
+    color: var(--info, #0066cc); /* Use variable, fallback */
     margin-left: 5px;
     cursor: pointer;
     font-size: 14px;
@@ -208,7 +218,7 @@
     max-height: 300px;
     overflow-y: auto;
     overflow-x: auto;
-    border: 1px solid #ddd;
+    border: 1px solid var(--par2protect-border-color, #ddd); /* Use variable, fallback */
     border-radius: 4px;
     padding: 10px;
     margin-top: 10px;
@@ -243,9 +253,9 @@
 
 /* Error popup specific styling */
 .sweet-alert.error-popup {
-    width: 478px !important;
-    max-width: 90% !important;
-    transition: none !important;
+    width: 478px; /* Removed !important */
+    max-width: 90%; /* Removed !important */
+    transition: none; /* Removed !important */
 }
 
 .error-details-container {
@@ -259,7 +269,7 @@
 .error-details-container pre {
     white-space: pre;
     background-color: var(--pre-background);
-    color: var(--text);
+    color: var(--par2protect-text);
     width: 100%;
     margin: 0;
     padding: 10px;
@@ -270,16 +280,16 @@
 
 /* Dialog positioning and appearance */
 .par2-dialog-verify {
-    position: fixed !important;
-    top: 35% !important;
-    left: 50% !important;
-    transform: translateX(-50%) !important;
+    position: fixed; /* Removed !important */
+    top: 35%; /* Removed !important */
+    left: 50%; /* Removed !important */
+    transform: translateX(-50%); /* Removed !important */
     min-width: 500px;
-    border: 1px solid #ccc;
+    border: 1px solid var(--par2protect-border-color, #ccc); /* Use variable, fallback */
     border-radius: 4px;
     /* box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
     z-index: 10001 !important; /* Ensure dialog is above other elements */
-    overflow: visible !important;
+    overflow: visible; /* Removed !important */
 }
 
 /* Dialog content */

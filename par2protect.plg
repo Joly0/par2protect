@@ -2,8 +2,8 @@
 <!DOCTYPE PLUGIN [
 <!ENTITY name "par2protect">
 <!ENTITY author "Joly0">
-<!ENTITY version "2025.04.06">
-<!ENTITY launch  "Settings/PAR2Protect">
+<!ENTITY version "2025.04.08">
+<!ENTITY launch  "Settings/PAR2ProtectSettings">
 <!ENTITY gitURL "https://raw.githubusercontent.com/Joly0/&name;/main">
 <!ENTITY pluginURL "&gitURL;/&name;.plg">
 <!ENTITY plgPATH "/boot/config/plugins/&name;">
@@ -15,6 +15,12 @@
 <PLUGIN name="&name;" author="&author;" version="&version;" launch="&launch;" pluginURL="&pluginURL;" support="https://forums.unraid.net/topic/YOURTHREAD" min="7.0.0">
 
     <CHANGES>
+###2025.04.08
+- Lots of bugfixing
+- Implemented upcoming unraid theme system
+- Added icons for pages
+- Improved queue database retry
+
 ###2025.04.06
 - Lots of stuff
 
