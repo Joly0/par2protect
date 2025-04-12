@@ -3,7 +3,7 @@ Title="PAR2Protect"
 Icon="shield"
 Type="xmenu"
 Tabs="true"
-Icon="Par2_Logo.png"
+Icon="par2protect.png"
 ---
 <script>
   document.addEventListener("DOMContentLoaded", function() {
