@@ -17,7 +17,6 @@ par2protect_output_frontend_includes();
 <script src="/plugins/par2protect/features/list/list.js"></script>
 
 <?php
-$GLOBALS['par2protect_components'] = include_once("/usr/local/emhttp/plugins/par2protect/shared-php-includes.php");
 $listPage = new \Par2Protect\Features\List\ListPage();
 $listPage->render();
 ?>

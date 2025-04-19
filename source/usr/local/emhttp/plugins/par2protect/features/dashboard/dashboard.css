@@ -150,7 +150,6 @@
 .par2-table th,
 .par2-table td {
     padding: 8px;
-    text-align: left;
     border-bottom: 1px solid var(--par2protect-border-color);
 }
 

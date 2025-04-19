@@ -69,7 +69,7 @@ $cron = explode(' ', $settings['protection']['verify_cron'] ?? '-1');
 if ($cron[0] === '-1') {
     $schedule = -1; // Disabled
 } else {
-    $schedule = $cron[2]!='*' ? 3 : ($cron[4]!='*' ? 2 : (substr($cron[1],0,1)!='*' ? 1 : 0));
+    $schedule = (isset($cron[2]) && $cron[2]!='*') ? 3 : ((isset($cron[4]) && $cron[4]!='*') ? 2 : ((isset($cron[1]) && substr($cron[1],0,1)!='*') ? 1 : 0));
 }
 $scheduleMode = ['Disabled', 'Hourly', 'Daily', 'Weekly', 'Monthly'];
 $days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -101,9 +101,9 @@ $days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Satu
   <dd>
     <select name="verify_day" <?=$schedule!=2?'disabled':''?>>
       <?php for ($d=0; $d<count($days); $d++): ?>
-      <option value="<?=$d?>" <?=$cron[4]==$d?'selected':''?>><?=$days[$d]?></option>
+      <option value="<?=$d?>" <?=(isset($cron[4]) && $cron[4]==$d)?'selected':''?>><?=$days[$d]?></option>
       <?php endfor; ?>
-      <option value="*" <?=$cron[4]=='*'?'selected':''?> disabled>--------</option>
+      <option value="*" <?=(isset($cron[4]) && $cron[4]=='*')?'selected':''?> disabled>--------</option>
     </select>
   </dd>
 </dl>
@@ -118,9 +118,9 @@ $days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Satu
   <dd>
     <select name="verify_dotm" <?=$schedule!=3?'disabled':''?>>
       <?php for ($d=1; $d<=31; $d++): ?>
-      <option value="<?=$d?>" <?=$cron[2]==$d?'selected':''?>><?=sprintf("%02d", $d)?></option>
+      <option value="<?=$d?>" <?=(isset($cron[2]) && $cron[2]==$d)?'selected':''?>><?=sprintf("%02d", $d)?></option>
       <?php endfor; ?>
-      <option value="*" <?=$cron[2]=='*'?'selected':''?> disabled>--------</option>
+      <option value="*" <?=(isset($cron[2]) && $cron[2]=='*')?'selected':''?> disabled>--------</option>
     </select>
   </dd>
 </dl>
@@ -136,7 +136,7 @@ $days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Satu
     <span id="H1" <?=$schedule==0?'style="display:none"':''?>>
       <select name="verify_hour1" class="narrow">
         <?php for ($h=0; $h<=23; $h++): ?>
-        <option value="<?=$h?>" <?=$cron[1]==$h?'selected':''?>><?=sprintf("%02d", $h)?></option>
+        <option value="<?=$h?>" <?=(isset($cron[1]) && $cron[1]==$h)?'selected':''?>><?=sprintf("%02d", $h)?></option>
         <?php endfor; ?>
       </select>
       <select name="verify_min" class="narrow">
@@ -147,12 +147,12 @@ $days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Satu
     </span>
     <span id="H2" <?=$schedule!=0?'style="display:none"':''?>>
       <select name="verify_hour2">
-        <option value="*/1" <?=$cron[1]=="*/1"?'selected':''?>>Every hour</option>
-        <option value="*/2" <?=$cron[1]=="*/2"?'selected':''?>>Every 2 hours</option>
-        <option value="*/3" <?=$cron[1]=="*/3"?'selected':''?>>Every 3 hours</option>
-        <option value="*/4" <?=$cron[1]=="*/4"?'selected':''?>>Every 4 hours</option>
-        <option value="*/6" <?=$cron[1]=="*/6"?'selected':''?>>Every 6 hours</option>
-        <option value="*/8" <?=$cron[1]=="*/8"?'selected':''?>>Every 8 hours</option>
+        <option value="*/1" <?=(isset($cron[1]) && $cron[1]=="*/1")?'selected':''?>>Every hour</option>
+        <option value="*/2" <?=(isset($cron[1]) && $cron[1]=="*/2")?'selected':''?>>Every 2 hours</option>
+        <option value="*/3" <?=(isset($cron[1]) && $cron[1]=="*/3")?'selected':''?>>Every 3 hours</option>
+        <option value="*/4" <?=(isset($cron[1]) && $cron[1]=="*/4")?'selected':''?>>Every 4 hours</option>
+        <option value="*/6" <?=(isset($cron[1]) && $cron[1]=="*/6")?'selected':''?>>Every 6 hours</option>
+        <option value="*/8" <?=(isset($cron[1]) && $cron[1]=="*/8")?'selected':''?>>Every 8 hours</option>
       </select>
     </span>
   </dd>
