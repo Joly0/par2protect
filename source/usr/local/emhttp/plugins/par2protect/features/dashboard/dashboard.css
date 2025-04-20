@@ -154,6 +154,7 @@
 }
 
 .par2-table th {
+    text-align: left;
     /* Remove background-color to prevent overriding the thead background */
     font-weight: bold;
 }

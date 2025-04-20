@@ -115,3 +115,10 @@
     pointer-events: none !important;
     z-index: -9999 !important;
 }
+
+/* Override Unraid 7.1.0+ core CSS hiding .fileTree */
+/* This ensures the file tree is visible when the container is shown */
+div[id$="-tree-container"] .fileTree {
+    display: block !important;
+    position: inherit;
+}

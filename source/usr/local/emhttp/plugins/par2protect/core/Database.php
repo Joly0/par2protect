@@ -73,21 +73,69 @@ class Database {
             // Removed shared connection logic
             // self::$sharedConnection = $this->db;
             
-            // Set journal mode
+            // --- Retry logic for PRAGMA exec calls ---
+            $execWithRetry = function($sql) {
+                $retries = 0;
+                $delay = 50; // Start with 50ms delay
+                while ($retries <= 5) { // Max 5 retries for PRAGMA
+                    try {
+                        $result = $this->db->exec($sql);
+                        if ($result === true) {
+                            return true; // Success
+                        }
+                        // If exec returns false, it might indicate an error other than lock, log it
+                        $this->logger->warning("PRAGMA exec returned false", ['sql' => $sql, 'error' => $this->db->lastErrorMsg()]);
+                        // Treat false return as needing retry for lock potential
+                        
+                    } catch (\Exception $e) {
+                        // Check specifically for lock errors during exec
+                        if (strpos($e->getMessage(), 'database is locked') !== false) {
+                             $this->logger->warning("Database locked during PRAGMA exec, retrying", [
+                                'sql' => $sql,
+                                'retry_count' => $retries + 1,
+                                'delay_ms' => $delay
+                            ]);
+                            usleep($delay * 1000); // Wait
+                            $delay = min($delay * 2, 1000); // Exponential backoff, max 1 sec
+                            $retries++;
+                            continue; // Retry the loop
+                        } else {
+                            // Re-throw other exceptions
+                            throw $e;
+                        }
+                    }
+                    
+                    // Handle case where exec returned false and it wasn't a lock exception
+                     $this->logger->warning("Database potentially locked during PRAGMA exec (returned false), retrying", [
+                        'sql' => $sql,
+                        'retry_count' => $retries + 1,
+                        'delay_ms' => $delay
+                    ]);
+                    usleep($delay * 1000); // Wait
+                    $delay = min($delay * 2, 1000); // Exponential backoff, max 1 sec
+                    $retries++;
+                }
+                // If retries exhausted
+                $this->logger->error("Failed to execute PRAGMA after multiple retries due to potential lock", ['sql' => $sql]);
+                throw new Exceptions\DatabaseException("Failed to execute PRAGMA after multiple retries: " . $sql);
+            };
+            // --- End Retry logic ---
+
+            // Set journal mode with retry
             $journalMode = $this->config->get('database.journal_mode', 'WAL');
-            $this->db->exec("PRAGMA journal_mode = $journalMode");
-            
-            // Set synchronous mode
+            $execWithRetry("PRAGMA journal_mode = $journalMode");
+
+            // Set synchronous mode with retry
             $synchronous = $this->config->get('database.synchronous', 'NORMAL');
-            $this->db->exec("PRAGMA synchronous = $synchronous");
-            
-            // Set busy timeout
-            $busyTimeout = $this->config->get('database.busy_timeout', 5000);
+            $execWithRetry("PRAGMA synchronous = $synchronous");
+
+            // Set busy timeout - Increase default value here
+            $busyTimeout = $this->config->get('database.busy_timeout', 30000); // Increased default to 30000ms
             $this->db->busyTimeout($busyTimeout);
-            
-            // Enable foreign keys
-            $this->db->exec('PRAGMA foreign_keys = ON');
-            
+
+            // Enable foreign keys with retry
+            $execWithRetry('PRAGMA foreign_keys = ON');
+
             // Database connections are not logged to reduce noise
         } catch (\Exception $e) {
             $this->logger->error("Database connection failed", [
