@@ -55,6 +55,7 @@ class QueueDatabase {
             $this->db->exec('PRAGMA synchronous = NORMAL');
             $this->db->exec('PRAGMA temp_store = MEMORY');
             $this->db->exec('PRAGMA cache_size = 5000');
+            $this->db->exec('PRAGMA busy_timeout = 5000'); // Wait up to 5 seconds on lock
             
             // Queue database connections are not logged to reduce noise
         } catch (\Exception $e) {

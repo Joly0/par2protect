@@ -238,7 +238,7 @@ class ProtectionRepository {
             $this->clearProtectedItemsCache();
             return true;
         } catch (\Exception $e) {
-            if ($this->db->inTransaction()) { $this->db->rollback(); }
+            if ($this->db->inTransaction) { $this->db->rollback(); }
             $this->logger->error("Failed to update verification status", ['id' => $id, 'error' => $e->getMessage()]);
             throw $e;
         }
@@ -267,12 +267,13 @@ class ProtectionRepository {
             $this->db->beginTransaction();
             $this->db->query("DELETE FROM verification_history WHERE protected_item_id = :id", [':id' => $id]);
             $this->db->query("DELETE FROM file_metadata WHERE protected_item_id = :id", [':id' => $id]);
-            $changes = $this->db->query("DELETE FROM protected_items WHERE id = :id", [':id' => $id]);
+            $this->db->query("DELETE FROM protected_items WHERE id = :id", [':id' => $id]); // Execute delete
+            $changes = $this->db->changes(); // Get affected rows count
             $this->db->commit();
-            if ($changes > 0) { $this->logger->debug("Removed protected item", ['id' => $id]); $this->clearProtectedItemsCache(); return true; }
-            else { $this->logger->warning("Attempted to remove item ID that doesn't exist?", ['id' => $id]); return false; }
+            if ($changes > 0) { $this->logger->debug("Removed protected item", ['id' => $id, 'affected_rows' => $changes]); $this->clearProtectedItemsCache(); return true; }
+            else { $this->logger->warning("Attempted to remove item ID that doesn't exist or delete failed?", ['id' => $id, 'affected_rows' => $changes]); return false; }
         } catch (\Exception $e) {
-            if ($this->db->inTransaction()) { $this->db->rollback(); }
+            if ($this->db->inTransaction) { $this->db->rollback(); }
             $this->logger->error("Failed to remove protected item", ['id' => $id, 'error' => $e->getMessage()]);
             throw $e;
         }

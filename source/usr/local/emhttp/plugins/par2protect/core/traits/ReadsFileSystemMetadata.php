@@ -85,10 +85,20 @@ trait ReadsFileSystemMetadata {
                 }
             }
 
+            // Get modification time
+            $mtime = filemtime($filePath);
+            if ($mtime === false) {
+                 $this->logger->warning("Failed to get file modification time", ['file_path' => $filePath]);
+                 // Decide if we should return false or continue without mtime?
+                 // For now, let's return false as mtime seems expected downstream.
+                 return false;
+            }
+
             return [
                 'owner' => $owner,
                 'group' => $group,
                 'permissions' => $permissions,
+                'mtime' => $mtime, // Add mtime here
                 'extended_attributes' => $extendedAttributes
             ];
         } catch (\Exception $e) {

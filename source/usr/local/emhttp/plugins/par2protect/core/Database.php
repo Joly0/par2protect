@@ -69,11 +69,18 @@ class Database {
             // self::$connectionCount++;
             // Create new SQLite database connection
             $this->db = new \SQLite3($this->dbPath);
+
+            // Set busy timeout immediately after connection BEFORE any PRAGMAs
+            // This allows SQLite's internal handling to manage locks for subsequent operations.
+            $busyTimeout = $this->config->get('database.busy_timeout', 30000); // Default 30000ms
+            $this->db->busyTimeout($busyTimeout);
             
             // Removed shared connection logic
             // self::$sharedConnection = $this->db;
             
             // --- Retry logic for PRAGMA exec calls ---
+            // Note: This retry logic might become less critical for locks now that busyTimeout is set earlier,
+            // but we keep it for potential edge cases or non-lock errors during PRAGMA exec.
             $execWithRetry = function($sql) {
                 $retries = 0;
                 $delay = 50; // Start with 50ms delay
@@ -90,7 +97,8 @@ class Database {
                     } catch (\Exception $e) {
                         // Check specifically for lock errors during exec
                         if (strpos($e->getMessage(), 'database is locked') !== false) {
-                             $this->logger->warning("Database locked during PRAGMA exec, retrying", [
+                             // This warning should be much rarer now with busyTimeout set earlier
+                             $this->logger->warning("Database locked during PRAGMA exec (despite busyTimeout), retrying", [
                                 'sql' => $sql,
                                 'retry_count' => $retries + 1,
                                 'delay_ms' => $delay
@@ -128,10 +136,6 @@ class Database {
             // Set synchronous mode with retry
             $synchronous = $this->config->get('database.synchronous', 'NORMAL');
             $execWithRetry("PRAGMA synchronous = $synchronous");
-
-            // Set busy timeout - Increase default value here
-            $busyTimeout = $this->config->get('database.busy_timeout', 30000); // Increased default to 30000ms
-            $this->db->busyTimeout($busyTimeout);
 
             // Enable foreign keys with retry
             $execWithRetry('PRAGMA foreign_keys = ON');
