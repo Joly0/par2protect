@@ -2,7 +2,7 @@
 <!DOCTYPE PLUGIN [
 <!ENTITY name "par2protect">
 <!ENTITY author "Joly0">
-<!ENTITY version "2025.04.21">
+<!ENTITY version "2025.04.26">
 <!ENTITY launch  "Settings/PAR2ProtectSettings">
 <!ENTITY gitURL "https://raw.githubusercontent.com/Joly0/&name;/main">
 <!ENTITY pluginURL "&gitURL;/&name;.plg">
@@ -15,6 +15,11 @@
 <PLUGIN name="&name;" author="&author;" version="&version;" launch="&launch;" pluginURL="&pluginURL;" support="https://forums.unraid.net/topic/YOURTHREAD" min="7.0.0">
 
     <CHANGES>
+###2025.04.26
+- More database locking fixes
+- Fix install and uninstall script
+- Fix verification scheduler not running
+
 ###2025.04.21
 - Further fix database locking
 
@@ -115,6 +120,10 @@ Plugin to automatically create and verify PAR2 files for data protection on your
             echo "| Setting up log backup cron job..."
             php /usr/local/emhttp/plugins/par2protect/scripts/setup_log_backup_cron.php
             
+            # Setup check schedule cron job
+            echo "| Setting up check schedule cron job..."
+            php /usr/local/emhttp/plugins/par2protect/scripts/setup_check_schedule_cron.php
+            
             echo "| Installation complete"
             echo "+=============================================================================="
         </INLINE>
@@ -135,6 +144,12 @@ Plugin to automatically create and verify PAR2 files for data protection on your
             # Remove packages
             removepkg &plgPATH;/.txz
             removepkg &plgPATH;/par2cmdline-turbo*.txz
+            
+            # Remove cron jobs
+            echo "| Removing cron jobs..."
+            (crontab -l 2>/dev/null | grep -v '/usr/local/emhttp/plugins/par2protect/scripts/check_schedule.php' || true) | crontab -
+            (crontab -l 2>/dev/null | grep -v '/usr/local/emhttp/plugins/par2protect/scripts/backup_logs.php' || true) | crontab -
+            (crontab -l 2>/dev/null | grep -v '/usr/local/emhttp/plugins/par2protect/scripts/cleanup_events.php' || true) | crontab -
             
             # Remove par2cmdline-turbo
             rm -f /usr/local/bin/par2

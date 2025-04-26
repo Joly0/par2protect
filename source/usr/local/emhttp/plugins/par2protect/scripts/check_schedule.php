@@ -20,7 +20,17 @@ use Par2Protect\Services\Queue; // Keep this one for type hinting if needed, or 
 // Get components
 // Get components from container
 $container = get_container();
+if (!$container) {
+    // Use basic error logging as the main logger might not be available
+    error_log("Par2Protect Schedule Check: Failed to get DI container from bootstrap.");
+    exit(1);
+}
 $logger = $container->get('logger');
+if (!$logger) {
+    // Use basic error logging as the main logger failed to initialize
+    error_log("Par2Protect Schedule Check: Failed to get logger service from container.");
+    exit(1);
+}
 $db = $container->get('database');
 $config = $container->get('config');
 
@@ -68,7 +78,7 @@ fwrite($lockFp, $myPid);
 fflush($lockFp);
 
 // Register a shutdown function to release the lock
-register_shutdown_function(function() use ($lockFp, $lockFile, $myPid) {
+register_shutdown_function(function() use ($lockFp, $lockFile, $myPid, $logger) {
     $logger->debug("Cleaning up lock file for PID: $myPid");
     
     // Check if the lock file handle is still valid

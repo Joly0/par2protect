@@ -42,8 +42,8 @@ class Logger {
     public function __construct() {
         // Ensure default tmp/backup dirs exist (best effort)
         $tmpLogDir = dirname($this->tmpLogFile);
-        if (!is_dir($tmpLogDir)) { @mkdir($tmpLogDir, 0755, true); }
-        if (!is_dir($this->backupPath)) { @mkdir($this->backupPath, 0755, true); }
+        // Directory creation moved to configure()
+        // Directory creation moved to configure()
     }
 
     /**
@@ -53,21 +53,77 @@ class Logger {
      */
     public function configure(Config $config): void
     {
+        $configSuccess = false; // Assume failure until proven otherwise
         try {
-            $this->setLogFile($config->get('logging.path', $this->logFile));
-            $this->setTmpLogFile($config->get('logging.tmp_path', $this->tmpLogFile));
-            $this->setBackupPath($config->get('logging.backup_path', $this->backupPath));
-            $this->setRotationSettings(
-                $config->get('logging.max_size', 10), // Default 10MB
-                $config->get('logging.max_files', 5)   // Default 5 files
-            );
-            $this->setLogLevelFromConfig($config); // Call the method to set the level
-            $this->isConfigured = true;
-             // Log configuration success *after* level is potentially set (use internal _log)
-             $this->_log("Logger configured successfully. Level set to: " . $this->currentLogLevel, self::DEBUG, []);
+            // 1. Set paths from config (without creating dirs yet)
+            $this->logFile = $config->get('logging.path', $this->logFile);
+            $this->tmpLogFile = $config->get('logging.tmp_path', $this->tmpLogFile);
+            $this->backupPath = $config->get('logging.backup_path', $this->backupPath);
+
+            // 2. Ensure directories exist
+            $dirsToEnsure = [
+                dirname($this->logFile),
+                dirname($this->tmpLogFile),
+                $this->backupPath // backupPath is the directory itself
+            ];
+            $allDirsOk = true;
+            foreach ($dirsToEnsure as $dir) {
+                // Skip check if dir is empty or null (could happen with bad config)
+                if (empty($dir)) {
+                    error_log("Par2Protect Logger: Invalid empty directory path encountered during configuration.");
+                    $allDirsOk = false;
+                    break;
+                }
+                if (!is_dir($dir)) {
+                    // Attempt creation without suppression
+                    if (!mkdir($dir, 0775, true)) {
+                        // Get error details if possible
+                        $error = error_get_last();
+                        $errorMsg = $error ? $error['message'] : 'Unknown error';
+                        error_log("Par2Protect Logger: Failed to create directory '$dir'. Error: $errorMsg");
+                        $allDirsOk = false;
+                        break; // Stop checking if one fails
+                    }
+                    // Optional: Add a small delay after mkdir, sometimes helps with NFS/shared mounts
+                    // usleep(10000); // 10ms
+                    // Verify again after creation attempt
+                    // if (!is_dir($dir)) {
+                    //     error_log("Par2Protect Logger: Directory '$dir' still does not exist after mkdir attempt.");
+                    //     $allDirsOk = false;
+                    //     break;
+                    // }
+                }
+                // Check writability after ensuring existence/creation
+                 if (!is_writable($dir)) {
+                     error_log("Par2Protect Logger: Directory '$dir' exists but is not writable.");
+                     $allDirsOk = false;
+                     break;
+                 }
+            }
+
+            // 3. Proceed only if directories are okay
+            if ($allDirsOk) {
+                $this->setRotationSettings(
+                    $config->get('logging.max_size', 10), // Default 10MB
+                    $config->get('logging.max_files', 5)   // Default 5 files
+                );
+                $this->setLogLevelFromConfig($config); // Call the method to set the level
+                $configSuccess = true; // All steps succeeded
+            }
+
         } catch (\Exception $e) {
-             // Use error_log as logger might not be fully functional if configure failed
-             error_log("Par2Protect Logger: Failed during configure(): " . $e->getMessage());
+            // Use error_log as logger might not be fully functional if configure failed
+            error_log("Par2Protect Logger: Exception during configure(): " . $e->getMessage());
+            $configSuccess = false; // Ensure failure on exception
+        } finally {
+            $this->isConfigured = $configSuccess;
+            if ($this->isConfigured) {
+                // Log configuration success *after* isConfigured is true
+                // Use _log directly to bypass level checks if needed for this specific message
+                $this->_log("Logger configured successfully. Level set to: " . $this->currentLogLevel, self::DEBUG, []);
+            } else {
+                error_log("Par2Protect Logger: Configuration failed. Logger remains unconfigured.");
+            }
         }
     }
 
@@ -82,20 +138,20 @@ class Logger {
     public function setLogFile($path): void {
         $this->logFile = $path;
         $permLogDir = dirname($this->logFile);
-         if (!is_dir($permLogDir)) { @mkdir($permLogDir, 0755, true); }
+         // Directory creation moved to configure()
     }
 
     /** Set temporary log file path */
     public function setTmpLogFile($path): void {
         $this->tmpLogFile = $path;
         $tmpLogDir = dirname($this->tmpLogFile);
-        if (!is_dir($tmpLogDir)) { @mkdir($tmpLogDir, 0755, true); }
+        // Directory creation moved to configure()
     }
 
      /** Set backup path */
      public function setBackupPath($path): void {
          $this->backupPath = $path;
-         if (!is_dir($this->backupPath)) { @mkdir($this->backupPath, 0755, true); }
+         // Directory creation moved to configure()
      }
 
      /** Set rotation settings */

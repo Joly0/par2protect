@@ -17,6 +17,7 @@ class Verification {
     private $logger;          // Logger instance
     private $config;          // Config instance
     private $cache;           // Cache instance
+    private Database $db;          // Database instance
     
     /**
      * Verification service constructor

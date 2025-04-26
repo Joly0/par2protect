@@ -89,110 +89,84 @@ class Queue {
             ]);
         }
         
-        // Retry logic for database locked errors
-        $maxRetries = 3;
-        $retryDelay = 100; // milliseconds
-        $attempt = 0;
-        
-        while ($attempt < $maxRetries) {
-            try {
-                // Validate operation type
-                $validTypes = ['protect', 'verify', 'remove', 'repair'];
-                if (!in_array($type, $validTypes)) {
-                    throw ApiException::badRequest("Invalid operation type: $type");
-                }
-                
-                // Validate parameters - either path or id must be provided
-                if ((!isset($parameters['path']) || empty($parameters['path'])) &&
-                    (!isset($parameters['id']) || empty($parameters['id']))) {
-                    throw ApiException::badRequest("Either path or id parameter is required");
-                }
-                
-                // Prepare the parameters outside the transaction to minimize transaction duration
-                $now = time();
-                $encodedParameters = json_encode($parameters);
-                
-                // Begin transaction with retry logic
-                $this->queueDb->beginTransaction();
-
-                $result = $this->queueDb->query(
-                    "INSERT INTO operation_queue (operation_type, parameters, status, created_at, updated_at)
-                    VALUES (:type, :parameters, 'pending', :now, :now)",
-                    [
-                        ':type' => $type,
-                        ':parameters' => $encodedParameters,
-                        ':now' => $now
-                    ]
-                );
-
-                // Get operation ID within the same transaction
-                $operationId = $this->queueDb->lastInsertId();
-                $this->queueDb->commit();
-
-                $this->logger->debug("Operation added to queue successfully", [
-                    'operation_id' => $operationId,
-                    'type' => $type,
-                    'operation_type' => $type,
-                    'id' => $parameters['id'] ?? null,
-                    'path' => $parameters['path'] ?? null,
-                    'status' => 'Success',
-                    'action' => ucfirst($type)
-                ]);
-                
-                // Start queue processor
-                $this->startQueueProcessor();
-                
-                return [
-                    'success' => true,
-                    'operation_id' => $operationId,
-                    'message' => 'Operation added to queue'
-                ];
-                
-            } catch (\PDOException $e) {
-                // Check if this is a database locked error
-                if (strpos($e->getMessage(), 'database is locked') !== false && $attempt < $maxRetries - 1) {
-                    $attempt++;
-                    $this->logger->debug("Database locked, retrying attempt $attempt", [
-                        'error' => $e->getMessage()
-                    ]);
-                    
-                    // Rollback if in transaction
-                    if ($this->queueDb->inTransaction()) {
-                        $this->queueDb->rollback();
-                    }
-                    
-                    // Exponential backoff
-                    usleep($retryDelay * 1000 * (1 + $attempt));
-                    continue;
-                }
-                throw $e;
-            } catch (ApiException $e) {
-                if ($this->queueDb->inTransaction()) {
-                    $this->queueDb->rollback();
-                }
-                throw $e;
-            } catch (\Exception $e) { // Catch generic exceptions last
-                if ($this->queueDb->inTransaction()) {
-                    $this->queueDb->rollback();
-                }
-
-                // Log the original exception details for better debugging
-                $this->logger->error("Caught generic exception while adding operation to queue", [
-                    'exception_class' => get_class($e),
-                    'original_message' => $e->getMessage(),
-                    'file' => $e->getFile(),
-                    'line' => $e->getLine(),
-                    // Optionally include stack trace if needed, but can be verbose
-                    // 'trace' => $e->getTraceAsString()
-                ]);
-
-                // Re-throw as ApiException for consistent API error handling
-                throw new ApiException("Failed to add operation to queue: " . $e->getMessage(), 500, $e); // Pass original exception
+        try {
+            // Validate operation type
+            $validTypes = ['protect', 'verify', 'remove', 'repair'];
+            if (!in_array($type, $validTypes)) {
+                throw ApiException::badRequest("Invalid operation type: $type");
             }
+            
+            // Validate parameters - either path or id must be provided
+            if ((!isset($parameters['path']) || empty($parameters['path'])) &&
+                (!isset($parameters['id']) || empty($parameters['id']))) {
+                throw ApiException::badRequest("Either path or id parameter is required");
+            }
+            
+            // Prepare the parameters outside the transaction to minimize transaction duration
+            $now = time();
+            $encodedParameters = json_encode($parameters);
+            
+            // Begin transaction - QueueDatabase handles retries internally via queryWithRetry and busy_timeout
+            $this->queueDb->beginTransaction();
+
+            $result = $this->queueDb->query(
+                "INSERT INTO operation_queue (operation_type, parameters, status, created_at, updated_at)
+                VALUES (:type, :parameters, 'pending', :now, :now)",
+                [
+                    ':type' => $type,
+                    ':parameters' => $encodedParameters,
+                    ':now' => $now
+                ]
+            );
+
+            // Get operation ID within the same transaction
+            $operationId = $this->queueDb->lastInsertId();
+            $this->queueDb->commit();
+
+            $this->logger->debug("Operation added to queue successfully", [
+                'operation_id' => $operationId,
+                'type' => $type,
+                'operation_type' => $type,
+                'id' => $parameters['id'] ?? null,
+                'path' => $parameters['path'] ?? null,
+                'status' => 'Success',
+                'action' => ucfirst($type)
+            ]);
+            
+            // Start queue processor
+            $this->startQueueProcessor();
+            
+            return [
+                'success' => true,
+                'operation_id' => $operationId,
+                'message' => 'Operation added to queue'
+            ];
+            
+        } catch (ApiException $e) {
+            // Rollback if an API exception occurred during the transaction
+            if ($this->queueDb->inTransaction()) {
+                $this->queueDb->rollback();
+            }
+            throw $e;
+        } catch (\Exception $e) { // Catch generic exceptions (including DatabaseException for locks from QueueDatabase)
+            if ($this->queueDb->inTransaction()) {
+                $this->queueDb->rollback();
+            }
+
+            // Log the original exception details for better debugging
+            $this->logger->error("Caught exception while adding operation to queue", [
+                'exception_class' => get_class($e),
+                'original_message' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                // Optionally include stack trace if needed, but can be verbose
+                // 'trace' => $e->getTraceAsString()
+            ]);
+
+            // Re-throw as ApiException for consistent API error handling
+            // Let QueueDatabase's retry handle the lock, otherwise throw API exception
+            throw new ApiException("Failed to add operation to queue: " . $e->getMessage(), 500, $e); // Pass original exception
         }
-        
-        // If we get here, all retries failed
-        throw new ApiException("Failed to add operation to queue after $maxRetries attempts due to database lock");
     }
     
     /**
