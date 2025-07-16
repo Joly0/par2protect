@@ -4,6 +4,7 @@ namespace Par2Protect\Core\Commands;
 use Par2Protect\Core\Config;
 use Par2Protect\Core\Logger;
 use Par2Protect\Core\Traits\AddsPar2ResourceLimits;
+use Par2Protect\Core\Exceptions\Par2ExecutionException;
 
 /**
  * Builds the command string for 'par2 create'.
@@ -17,7 +18,7 @@ class Par2CreateCommandBuilder {
     // PAR2 create specific options
     private $redundancy = null;
     private $blockSize = null;
-    private $blockCount = null;
+    private $blockCount = 0;
     private $recoveryFileCount = null;
     // Note: par2cmdline uses -s for block size OR recovery file size, not both.
     // We might need separate setters or logic to handle this ambiguity if both are needed.
@@ -113,6 +114,22 @@ class Par2CreateCommandBuilder {
         return $this->parityPath;
     }
 
+    public function getBasePath(): ?string {
+        return $this->basePath;
+    }
+
+    public function getRedundancy(): ?int {
+        return $this->redundancy;
+    }
+
+    public function getSourceFiles(): array {
+        return $this->sourceFiles;
+    }
+
+    public function getBlockCount(): int {
+        return $this->blockCount;
+    }
+
     /**
      * Resets the builder state to defaults.
      *
@@ -153,7 +170,7 @@ class Par2CreateCommandBuilder {
             throw new \InvalidArgumentException("Parity path must be set for create command.");
         }
         // Only check for source files if they are meant to be included in this command string
-        if ($includeSourceFiles && empty($this->sourceFiles)) {
+        if ($includeSourceFiles && empty($this->sourceFiles) && $this->blockCount === 0) {
             throw new \InvalidArgumentException("At least one source file must be added for create command when includeSourceFiles is true.");
         }
         // Base path is optional for create if files have absolute paths, but required by our logic
@@ -163,9 +180,12 @@ class Par2CreateCommandBuilder {
          if ($this->redundancy === null && $this->recoveryFileCount === null) {
              throw new \InvalidArgumentException("Either redundancy or recovery file count must be set for create command.");
          }
-
-
-        // Use absolute path for par2 command
+ 
+         if ($this->blockCount > 32768) {
+             throw new Par2ExecutionException("The number of source files (" . $this->blockCount . ") exceeds the par2 format limit of 32,768.");
+         }
+ 
+         // Use absolute path for par2 command
         // Use correct absolute path for par2 command
         $command = '/usr/local/bin/par2 create';
 
@@ -183,8 +203,8 @@ class Par2CreateCommandBuilder {
         }
         if ($this->blockSize !== null) {
             $command .= ' -s' . intval($this->blockSize);
-        } elseif ($this->blockCount !== null) { // Only add block count if block size isn't set
-             $command .= ' -c' . intval($this->blockCount);
+        } elseif ($this->blockCount > 2000) { // Only add block count if block size isn't set
+             $command .= ' -b' . intval($this->blockCount);
         }
         // Handle recovery file count - par2 uses -n
         if ($this->recoveryFileCount !== null) {
@@ -203,7 +223,7 @@ class Par2CreateCommandBuilder {
         // Add Parity Path (target archive name)
         $command .= ' -a' . escapeshellarg($this->parityPath);
 
-        // Add Source Files only if requested
+        // Add Source Files only if requested and not reading from stdin
         if ($includeSourceFiles) {
             // IMPORTANT: Source files MUST come after the options and the target archive name (-a)
             // and after the '--' separator if used

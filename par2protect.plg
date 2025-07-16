@@ -2,19 +2,23 @@
 <!DOCTYPE PLUGIN [
 <!ENTITY name "par2protect">
 <!ENTITY author "Joly0">
-<!ENTITY version "2025.04.26">
+<!ENTITY version "2025.07.16">
 <!ENTITY launch  "Settings/PAR2ProtectSettings">
 <!ENTITY gitURL "https://raw.githubusercontent.com/Joly0/&name;/main">
 <!ENTITY pluginURL "&gitURL;/&name;.plg">
 <!ENTITY plgPATH "/boot/config/plugins/&name;">
 <!ENTITY plgNAME "&name;-&version;-x86_64">
 <!ENTITY emhttp "/usr/local/emhttp/plugins/&name;">
-<!ENTITY par2VER "v1.2.0">
+<!ENTITY par2VER "v1.3.0">
 <!ENTITY par2NAME "par2cmdline-turbo-&par2VER;-x86_64">
 ]>
 <PLUGIN name="&name;" author="&author;" version="&version;" launch="&launch;" pluginURL="&pluginURL;" support="https://forums.unraid.net/topic/YOURTHREAD" min="7.0.0">
 
     <CHANGES>
+###2025.07.16
+- Finally (hopefully) fix large file count protects
+- Fix removing protected paths that dont exist anymore
+
 ###2025.04.26
 - More database locking fixes
 - Fix install and uninstall script

@@ -76,7 +76,7 @@ class ProtectionOperations {
         } elseif ($mode === 'directory') {
             $sourceFiles = $this->findSourceFiles($path, $fileTypes, $parityDir);
             if (empty($sourceFiles)) { throw new \Exception("No files found to protect in directory matching criteria: $path"); }
-            return $this->executeMultiplePar2Commands($this->createBuilder, $sourceFiles, $par2Path);
+            return $this->executePar2CommandWithFileList($this->createBuilder, $sourceFiles, $par2Path);
         } else {
             throw new \InvalidArgumentException("Invalid protection mode specified: $mode");
         }
@@ -188,27 +188,217 @@ class ProtectionOperations {
         return $files;
     }
 
-    /** Execute multiple PAR2 commands using xargs for efficiency */
-    private function executeMultiplePar2Commands(Par2CreateCommandBuilder $builder, array $sourceFiles, string $par2Path): string {
-        $tempDir = '/tmp/par2protect/xargs_file_lists';
+    /**
+     * Calculate optimal xargs parameters based on system limits and file list
+     */
+    private function calculateXargsParameters($tempFile, $id)
+    {
+        $this->logger->debug("Calculating xargs parameters", ['id' => $id]);
+        
+        try {
+            // Detect system ARG_MAX limit
+            $argMaxOutput = shell_exec('getconf ARG_MAX 2>/dev/null');
+            $argMax = $argMaxOutput ? (int)trim($argMaxOutput) : 131072; // Default fallback
+            
+            // Validate ARG_MAX is reasonable (minimum 4KB, maximum 32MB)
+            if ($argMax < 4096) {
+                $this->logger->warning("ARG_MAX too low, using fallback", ['id' => $id, 'detected' => $argMax]);
+                $argMax = 131072;
+            } elseif ($argMax > 33554432) { // 32MB
+                $this->logger->warning("ARG_MAX very high, capping", ['id' => $id, 'detected' => $argMax]);
+                $argMax = 33554432;
+            }
+            
+            $this->logger->debug("System ARG_MAX detected", ['id' => $id, 'arg_max' => $argMax]);
+            
+            // Safety margin (use 80% of available space)
+            $safetyMargin = 0.8;
+            $safeArgMax = floor($argMax * $safetyMargin);
+            
+            // Analyze actual file list
+            if (!file_exists($tempFile)) {
+                throw new \RuntimeException("Temporary file list not found: $tempFile");
+            }
+            
+            $fileListContent = file_get_contents($tempFile);
+            if ($fileListContent === false) {
+                throw new \RuntimeException("Failed to read temporary file list: $tempFile");
+            }
+            
+            if (empty($fileListContent)) {
+                $this->logger->warning("Empty file list detected", ['id' => $id]);
+                return [
+                    'max_args' => 1000,
+                    'max_size' => $safeArgMax,
+                    'chunk_needed' => false
+                ];
+            }
+            
+            // Split by null terminator and filter empty entries
+            $fileList = array_filter(explode("\0", trim($fileListContent, "\0")));
+            $fileCount = count($fileList);
+            
+            if ($fileCount === 0) {
+                $this->logger->warning("No valid files in file list", ['id' => $id]);
+                return [
+                    'max_args' => 1000,
+                    'max_size' => $safeArgMax,
+                    'chunk_needed' => false
+                ];
+            }
+            
+            // Calculate average path length and find maximum path length
+            $totalLength = array_sum(array_map('strlen', $fileList));
+            $avgPathLength = $totalLength / $fileCount;
+            $maxPathLength = max(array_map('strlen', $fileList));
+            
+            // Check for extremely long paths that might cause issues
+            if ($maxPathLength > 4096) {
+                $this->logger->warning("Very long file path detected", [
+                    'id' => $id,
+                    'max_path_length' => $maxPathLength,
+                    'avg_path_length' => round($avgPathLength, 2)
+                ]);
+            }
+            
+            // Calculate optimal parameters
+            // Add 20 bytes buffer per argument for spacing, shell overhead, and safety
+            $bufferPerArg = 20;
+            $maxArgsBasedOnSize = floor($safeArgMax / ($avgPathLength + $bufferPerArg));
+            
+            // PAR2 has a limit of 32,768 files per operation
+            $par2FileLimit = 32768;
+            
+            // Additional conservative limits for stability
+            $conservativeLimit = 10000; // Conservative limit for very large file sets
+            
+            // Choose the most restrictive limit
+            $maxArgs = min($par2FileLimit, $maxArgsBasedOnSize, $fileCount, $conservativeLimit);
+            
+            // Ensure we have at least 1 argument but not more than what makes sense
+            $maxArgs = max(1, min($maxArgs, $fileCount));
+            
+            $chunkNeeded = $fileCount > $maxArgs;
+            
+            $this->logger->info("Calculated xargs parameters", [
+                'id' => $id,
+                'file_count' => $fileCount,
+                'avg_path_length' => round($avgPathLength, 2),
+                'max_path_length' => $maxPathLength,
+                'max_args' => $maxArgs,
+                'max_size' => $safeArgMax,
+                'chunk_needed' => $chunkNeeded,
+                'estimated_chunks' => $chunkNeeded ? ceil($fileCount / $maxArgs) : 1
+            ]);
+            
+            return [
+                'max_args' => $maxArgs,
+                'max_size' => $safeArgMax,
+                'chunk_needed' => $chunkNeeded
+            ];
+            
+        } catch (\Exception $e) {
+            $this->logger->error("Error calculating xargs parameters", [
+                'id' => $id,
+                'error' => $e->getMessage()
+            ]);
+            
+            // Return conservative fallback parameters
+            return [
+                'max_args' => 1000,
+                'max_size' => 131072,
+                'chunk_needed' => false
+            ];
+        }
+    }
+
+    /** Execute a single PAR2 create command by piping a file list to it. */
+    private function executePar2CommandWithFileList(Par2CreateCommandBuilder $builder, array $sourceFiles, string $par2Path): string {
+        $tempDir = '/tmp/par2protect/file_lists';
         $this->ensureDirectoryExists($tempDir);
+        
+        // Clean up old file lists to prevent disk space issues
         $cleanupCommand = "/usr/bin/find " . escapeshellarg($tempDir) . " -name 'par2_files_*.txt' -type f -mtime +1 -delete";
         exec($cleanupCommand, $cleanupOutput, $cleanupReturnCode);
-        if ($cleanupReturnCode !== 0) { $this->logger->warning("Failed to clean up old xargs file lists", ['command' => $cleanupCommand]); }
-        $timestamp = date('Ymd_His'); $random = substr(md5(uniqid(rand(), true)), 0, 10);
-        $tempFile = $tempDir . '/par2_files_' . $timestamp . '_' . $random . '.txt';
+        if ($cleanupReturnCode !== 0) {
+            $this->logger->warning("Failed to clean up old file lists", ['command' => $cleanupCommand]);
+        }
+        
+        // Create a unique temporary file to hold the list of source files
+        $timestamp = date('Ymd_His');
+        $random = substr(md5(uniqid(rand(), true)), 0, 10);
+        $fileListPath = $tempDir . '/par2_files_' . $timestamp . '_' . $random . '.txt';
+        
+        // Write the null-terminated list of files
         $fileListContent = implode("\0", $sourceFiles);
-        if (file_put_contents($tempFile, $fileListContent) === false) { throw new \RuntimeException("Failed to write temporary file list: $tempFile"); }
-        $this->logger->debug("Created temporary file list for xargs", ['file' => $tempFile]);
+        if (file_put_contents($fileListPath, $fileListContent) === false) {
+            throw new \RuntimeException("Failed to write temporary file list: $fileListPath");
+        }
+        $this->logger->debug("Created temporary file list for par2 create", ['file' => $fileListPath, 'file_count' => count($sourceFiles)]);
+        
+        // Configure the builder to read the file list from stdin
+        $builder->setBlockCount(count($sourceFiles));
+        
+        // Build the base command string without the source file arguments
         $baseCommandWithOptions = $builder->buildCommandString(false);
-        $xargs_cmd = '/usr/bin/xargs -0';
-        $command = "/bin/cat " . escapeshellarg($tempFile) . " | " . $xargs_cmd . " " . $baseCommandWithOptions . " --";
-        $this->logger->debug("Executing par2 command using xargs for directory", ['command' => $command, 'file_count' => count($sourceFiles)]);
+        
+        // Generate a unique ID for logging purposes
+        $uniqueId = 'par2_' . substr(md5($fileListPath), 0, 8);
+        
         try {
+            // Calculate dynamic xargs parameters
+            $xargsParams = $this->calculateXargsParameters($fileListPath, $uniqueId);
+            
+            if ($xargsParams['chunk_needed']) {
+                $this->logger->info("Large file list detected, will use chunked processing", [
+                    'id' => $uniqueId,
+                    'max_args' => $xargsParams['max_args'],
+                    'file_count' => count($sourceFiles)
+                ]);
+            }
+            
+            // Validate xargs parameters
+            if ($xargsParams['max_args'] < 1 || $xargsParams['max_size'] < 1024) {
+                $this->logger->warning("Invalid xargs parameters, using fallback", [
+                    'id' => $uniqueId,
+                    'max_args' => $xargsParams['max_args'],
+                    'max_size' => $xargsParams['max_size']
+                ]);
+                $xargsParams['max_args'] = 1000;
+                $xargsParams['max_size'] = 131072;
+            }
+            
+            // Construct the final command using xargs to convert piped file list into command line arguments
+            $command = sprintf(
+                "/bin/cat %s | /usr/bin/xargs -n %d -s %d -0 %s --",
+                escapeshellarg($fileListPath),
+                $xargsParams['max_args'],
+                $xargsParams['max_size'],
+                $baseCommandWithOptions
+            );
+            
+            $this->logger->debug("Executing par2 command with xargs", [
+                'id' => $uniqueId,
+                'command' => $command,
+                'xargs_params' => $xargsParams
+            ]);
+            
+            // Execute the command
             $this->executePar2Command($command, $sourceFiles);
-            // @unlink($tempFile); // Keep temp file for potential debugging
             return $par2Path;
-        } catch (\Exception $e) { $this->logger->error("xargs par2 command failed, keeping temp file for debugging.", ['file' => $tempFile]); throw $e; }
+            
+        } catch (\Exception $e) {
+            // In case of an error, log it and keep the temp file for debugging
+            $this->logger->error("Par2 command with xargs failed, keeping temp file for debugging.", [
+                'id' => $uniqueId,
+                'file' => $fileListPath,
+                'error' => $e->getMessage()
+            ]);
+            throw $e;
+        } finally {
+            // Optionally, uncomment the line below to clean up the temp file immediately after execution
+            // @unlink($fileListPath);
+        }
     }
 
     /** Execute a single PAR2 command */
@@ -299,9 +489,17 @@ class ProtectionOperations {
                      $success = false;
                 }
             } else {
-                // If no directory was identified (e.g., path not found, invalid mode)
-                $this->logger->warning("PAR2 path not found or invalid mode for removal", compact('par2Path', 'mode'));
-                $success = false;
+                // If no directory was identified, check if PAR2 files are already gone
+                // This handles cases where files were removed externally
+                if (!file_exists($par2Path) && !is_dir($par2Path)) {
+                    // PAR2 path doesn't exist - treat as successful removal
+                    $this->logger->info("PAR2 files already removed externally", ['par2Path' => $par2Path, 'mode' => $mode]);
+                    $success = true;
+                } else {
+                    // Path exists but we couldn't identify proper removal strategy
+                    $this->logger->warning("PAR2 path found but invalid mode for removal", compact('par2Path', 'mode'));
+                    $success = false;
+                }
             }
         } catch (\Exception $e) { $this->logger->error("Error removing PAR2 files", ['path' => $par2Path, 'error' => $e->getMessage()]); $success = false; }
         return $success;

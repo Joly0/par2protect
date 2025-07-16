@@ -35,7 +35,7 @@ mkdir -p "$packages_dir"
 
 # Get the latest par2cmdline-turbo version information
 echo "Checking for latest par2cmdline-turbo..."
-PAR2_LATEST_URL=$(curl -s https://api.github.com/repos/animetosho/par2cmdline-turbo/releases/latest | grep "browser_download_url.*linux-amd64.xz" | cut -d '"' -f 4)
+PAR2_LATEST_URL=$(curl -s https://api.github.com/repos/animetosho/par2cmdline-turbo/releases/latest | grep "browser_download_url.*linux.*amd64" | cut -d '"' -f 4)
 PAR2_VERSION=$(echo "$PAR2_LATEST_URL" | grep -oP 'v\d+\.\d+\.\d+' | head -1)
 PAR2_ARCHIVE="par2cmdline-turbo-${PAR2_VERSION}-x86_64"
 
@@ -63,7 +63,10 @@ fi
 if [ "$PAR2_NEEDS_PACKAGING" = true ]; then
     mkdir -p "$par2tmpdir"
     echo "Downloading par2cmdline-turbo $PAR2_VERSION..."
-    wget -q -O "$par2tmpdir/par2cmdline-turbo.xz" "$PAR2_LATEST_URL"
+    
+    # Download to temporary file first
+    temp_download="$par2tmpdir/par2cmdline-turbo.tmp"
+    wget -q -O "$temp_download" "$PAR2_LATEST_URL"
     
     if [ $? -ne 0 ]; then
         echo "Error: Failed to download par2cmdline-turbo."
@@ -71,10 +74,49 @@ if [ "$PAR2_NEEDS_PACKAGING" = true ]; then
         exit 1
     fi
     
-    echo "Extracting par2cmdline-turbo..."
-    xz -d "$par2tmpdir/par2cmdline-turbo.xz"
+    # Detect file type using file command
+    file_type=$(file -b "$temp_download")
     
-    if [ ! -f "$par2tmpdir/par2cmdline-turbo" ]; then
+    echo "Extracting par2cmdline-turbo..."
+    
+    # Extract based on detected file type
+    if echo "$file_type" | grep -q "XZ compressed"; then
+        # Handle XZ compressed file
+        mv "$temp_download" "$par2tmpdir/par2cmdline-turbo.xz"
+        xz -d "$par2tmpdir/par2cmdline-turbo.xz"
+        extracted_file="$par2tmpdir/par2cmdline-turbo"
+        
+    elif echo "$file_type" | grep -q "Zip archive"; then
+        # Handle ZIP file
+        mv "$temp_download" "$par2tmpdir/par2cmdline-turbo.zip"
+        cd "$par2tmpdir" || exit 1
+        unzip -q "par2cmdline-turbo.zip"
+        
+        # Find the extracted executable (might have different names)
+        extracted_file=$(find "$par2tmpdir" -type f -executable -name "*par2*" | head -1)
+        
+        # If no executable found, look for common names
+        if [ -z "$extracted_file" ]; then
+            for name in par2cmdline-turbo par2 par2cmdline; do
+                if [ -f "$par2tmpdir/$name" ]; then
+                    extracted_file="$par2tmpdir/$name"
+                    break
+                fi
+            done
+        fi
+        
+        # Clean up zip file
+        rm -f "$par2tmpdir/par2cmdline-turbo.zip"
+        
+    else
+        echo "Error: Unsupported file type: $file_type"
+        echo "Expected XZ compressed or ZIP archive."
+        rm -rf "$par2tmpdir"
+        exit 1
+    fi
+    
+    # Check if extraction was successful
+    if [ -z "$extracted_file" ] || [ ! -f "$extracted_file" ]; then
         echo "Error: Failed to extract par2cmdline-turbo."
         rm -rf "$par2tmpdir"
         exit 1
@@ -82,7 +124,7 @@ if [ "$PAR2_NEEDS_PACKAGING" = true ]; then
     
     # Create par2cmdline-turbo package
     mkdir -p "$par2tmpdir/usr/local/bin"
-    mv "$par2tmpdir/par2cmdline-turbo" "$par2tmpdir/usr/local/bin/par2"
+    mv "$extracted_file" "$par2tmpdir/usr/local/bin/par2"
     chmod +x "$par2tmpdir/usr/local/bin/par2"
     
     # Package par2cmdline-turbo
