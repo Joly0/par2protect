@@ -1,4 +1,4 @@
-# PAR2Protect Plugin for Unraid
+# PAR2Protect Plugin for Unraid (still heavy work in progress)
 
 PAR2Protect is an Unraid plugin that uses par2 commands to protect, verify, and repair files and folders. It leverages the par2cmdline-turbo executable to create parity files that can be used to detect and repair file corruption.
 
@@ -57,10 +57,6 @@ Or install manually by adding this URL in the Unraid plugin section:
 - PAR2 file creation can be CPU intensive, especially for large files or directories
 - Additional storage space is required for PAR2 files (based on chosen redundancy level)
 - The plugin uses par2cmdline-turbo for optimal performance
-
-
-Understood. Here is the updated API section content you can use for your README file, reflecting the endpoints found in `api/v1/routes.php`:
-
 
 ## API
 
