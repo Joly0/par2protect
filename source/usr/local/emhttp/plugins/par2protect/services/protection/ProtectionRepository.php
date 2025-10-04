@@ -97,12 +97,36 @@ class ProtectionRepository {
             $this->db->query("CREATE INDEX idx_file_metadata_protected_item_id ON file_metadata(protected_item_id)");
             $this->db->query("CREATE INDEX idx_file_metadata_file_path ON file_metadata(file_path)");
         }
+         // Create protection_chunks table if it doesn't exist
+         if (!$this->db->tableExists('protection_chunks')) {
+             $this->logger->debug("Creating protection_chunks table");
+             $this->db->query("
+                 CREATE TABLE protection_chunks (
+                     id INTEGER PRIMARY KEY AUTOINCREMENT,
+                     operation_id TEXT NOT NULL,
+                     target_root TEXT NOT NULL,
+                     chunk_index INTEGER NOT NULL,
+                     file_count INTEGER NOT NULL,
+                     filelist_hash TEXT,
+                     parity_path TEXT NOT NULL,
+                     command TEXT,
+                     status TEXT NOT NULL DEFAULT 'PENDING',
+                     return_code INTEGER,
+                     elapsed_ms INTEGER,
+                     created_at DATETIME DEFAULT (datetime('now', 'localtime')),
+                     updated_at DATETIME DEFAULT (datetime('now', 'localtime'))
+                 )
+             ");
+             $this->db->query("CREATE UNIQUE INDEX idx_operation_chunk ON protection_chunks(operation_id, chunk_index)");
+             $this->db->query("CREATE INDEX idx_operation_id ON protection_chunks(operation_id)");
+         }
+ 
          // Add columns if they don't exist (migration)
-         $this->addColumnIfNotExists('protected_items', 'last_details', 'TEXT');
-         $this->addColumnIfNotExists('file_metadata', 'mtime', 'INTEGER');
-         $this->addColumnIfNotExists('protected_items', 'display_mode', 'TEXT'); // Add display_mode column
-         // Check/warn about FK
-         $this->updateForeignKeyIfNotExists('verification_history', 'protected_items', 'protected_item_id', 'id', 'CASCADE');
+           $this->addColumnIfNotExists('protected_items', 'last_details', 'TEXT');
+           $this->addColumnIfNotExists('file_metadata', 'mtime', 'INTEGER');
+           $this->addColumnIfNotExists('protected_items', 'display_mode', 'TEXT'); // Add display_mode column
+           // Check/warn about FK
+           $this->updateForeignKeyIfNotExists('verification_history', 'protected_items', 'protected_item_id', 'id', 'CASCADE');
     }
 
      /** Helper function to add a column if it doesn't exist */
@@ -303,6 +327,153 @@ class ProtectionRepository {
         } catch (\Exception $e) {
             $this->logger->error("Failed to find redundancy by IDs", ['ids_count' => count($itemIds), 'error' => $e->getMessage()]);
             return [];
+        }
+    }
+
+    /**
+     * Insert or update a chunk record
+     */
+    public function upsertChunk(array $data): void {
+        try {
+            $now = date('Y-m-d H:i:s');
+
+            // Check if chunk already exists
+            $existing = $this->db->query(
+                "SELECT id FROM protection_chunks WHERE operation_id = :operation_id AND chunk_index = :chunk_index",
+                [':operation_id' => $data['operation_id'], ':chunk_index' => $data['chunk_index']]
+            );
+            $existingChunk = $this->db->fetchOne($existing);
+
+            if ($existingChunk) {
+                // Update existing chunk
+                $this->db->query(
+                    "UPDATE protection_chunks SET
+                        target_root = :target_root,
+                        file_count = :file_count,
+                        filelist_hash = :filelist_hash,
+                        parity_path = :parity_path,
+                        command = :command,
+                        status = :status,
+                        return_code = :return_code,
+                        elapsed_ms = :elapsed_ms,
+                        updated_at = :updated_at
+                    WHERE operation_id = :operation_id AND chunk_index = :chunk_index",
+                    [
+                        ':operation_id' => $data['operation_id'],
+                        ':chunk_index' => $data['chunk_index'],
+                        ':target_root' => $data['target_root'],
+                        ':file_count' => $data['file_count'],
+                        ':filelist_hash' => $data['filelist_hash'] ?? null,
+                        ':parity_path' => $data['parity_path'],
+                        ':command' => $data['command'] ?? null,
+                        ':status' => $data['status'] ?? 'PENDING',
+                        ':return_code' => $data['return_code'] ?? null,
+                        ':elapsed_ms' => $data['elapsed_ms'] ?? null,
+                        ':updated_at' => $now
+                    ]
+                );
+                $this->logger->debug("Updated existing chunk", [
+                    'operation_id' => $data['operation_id'],
+                    'chunk_index' => $data['chunk_index']
+                ]);
+            } else {
+                // Insert new chunk
+                $this->db->query(
+                    "INSERT INTO protection_chunks
+                        (operation_id, target_root, chunk_index, file_count, filelist_hash, parity_path, command, status, return_code, elapsed_ms, created_at, updated_at)
+                    VALUES
+                        (:operation_id, :target_root, :chunk_index, :file_count, :filelist_hash, :parity_path, :command, :status, :return_code, :elapsed_ms, :created_at, :updated_at)",
+                    [
+                        ':operation_id' => $data['operation_id'],
+                        ':target_root' => $data['target_root'],
+                        ':chunk_index' => $data['chunk_index'],
+                        ':file_count' => $data['file_count'],
+                        ':filelist_hash' => $data['filelist_hash'] ?? null,
+                        ':parity_path' => $data['parity_path'],
+                        ':command' => $data['command'] ?? null,
+                        ':status' => $data['status'] ?? 'PENDING',
+                        ':return_code' => $data['return_code'] ?? null,
+                        ':elapsed_ms' => $data['elapsed_ms'] ?? null,
+                        ':created_at' => $now,
+                        ':updated_at' => $now
+                    ]
+                );
+                $this->logger->debug("Created new chunk", [
+                    'operation_id' => $data['operation_id'],
+                    'chunk_index' => $data['chunk_index']
+                ]);
+            }
+        } catch (\Exception $e) {
+            $this->logger->error("Failed to upsert chunk", [
+                'operation_id' => $data['operation_id'] ?? 'unknown',
+                'chunk_index' => $data['chunk_index'] ?? 'unknown',
+                'error' => $e->getMessage()
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
+     * Get all chunks for a specific operation
+     */
+    public function getChunksByOperationId(string $operationId): array {
+        try {
+            $result = $this->db->query(
+                "SELECT * FROM protection_chunks WHERE operation_id = :operation_id ORDER BY chunk_index ASC",
+                [':operation_id' => $operationId]
+            );
+            $chunks = $this->db->fetchAll($result);
+            $this->logger->debug("Retrieved chunks for operation", [
+                'operation_id' => $operationId,
+                'chunk_count' => count($chunks)
+            ]);
+            return $chunks;
+        } catch (\Exception $e) {
+            $this->logger->error("Failed to get chunks by operation ID", [
+                'operation_id' => $operationId,
+                'error' => $e->getMessage()
+            ]);
+            return [];
+        }
+    }
+
+    /**
+     * Get the latest operation for a specific target root
+     */
+    public function getLatestOperationForTarget(string $targetRoot): ?array {
+        try {
+            $result = $this->db->query(
+                "SELECT
+                    operation_id,
+                    MAX(created_at) as latest_created_at
+                FROM protection_chunks
+                WHERE target_root = :target_root
+                GROUP BY operation_id
+                ORDER BY latest_created_at DESC
+                LIMIT 1",
+                [':target_root' => $targetRoot]
+            );
+            $operation = $this->db->fetchOne($result);
+
+            if ($operation) {
+                $chunks = $this->getChunksByOperationId($operation['operation_id']);
+                $operation['chunks'] = $chunks;
+                $this->logger->debug("Retrieved latest operation for target", [
+                    'target_root' => $targetRoot,
+                    'operation_id' => $operation['operation_id'],
+                    'chunk_count' => count($chunks)
+                ]);
+                return $operation;
+            }
+
+            $this->logger->debug("No operations found for target", ['target_root' => $targetRoot]);
+            return null;
+        } catch (\Exception $e) {
+            $this->logger->error("Failed to get latest operation for target", [
+                'target_root' => $targetRoot,
+                'error' => $e->getMessage()
+            ]);
+            return null;
         }
     }
 

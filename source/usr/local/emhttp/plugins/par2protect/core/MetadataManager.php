@@ -477,6 +477,37 @@ class MetadataManager {
 
 
     /**
+     * Convert 9-character permission string (rwxrwxrwx) to octal permission value
+     *
+     * @param string $permString 9-character permission string
+     * @return int Octal permission value
+     */
+    private function permStringToOctal(string $permString): int
+    {
+        $perms = 0;
+        
+        // Owner permissions
+        if ($permString[0] === 'r') $perms += 0400;
+        if ($permString[1] === 'w') $perms += 0200;
+        if ($permString[2] === 'x' || $permString[2] === 's') $perms += 0100;
+        if ($permString[2] === 's' || $permString[2] === 'S') $perms += 04000; // SUID
+        
+        // Group permissions
+        if ($permString[3] === 'r') $perms += 040;
+        if ($permString[4] === 'w') $perms += 020;
+        if ($permString[5] === 'x' || $permString[5] === 's') $perms += 010;
+        if ($permString[5] === 's' || $permString[5] === 'S') $perms += 02000; // SGID
+        
+        // Other permissions
+        if ($permString[6] === 'r') $perms += 04;
+        if ($permString[7] === 'w') $perms += 02;
+        if ($permString[8] === 'x' || $permString[8] === 't') $perms += 01;
+        if ($permString[8] === 't' || $permString[8] === 'T') $perms += 01000; // Sticky bit
+        
+        return $perms;
+    }
+
+    /**
      * Restore metadata for a specific file using stored data.
      *
      * @param string $filePath Path to the file
@@ -491,13 +522,13 @@ class MetadataManager {
         try {
             // Restore Permissions
             if (isset($metadata['permissions'])) {
-                // Convert stored permissions (string like '0644') to octal integer
-                $octalPerms = octdec($metadata['permissions']);
+                // Convert stored permissions string (like 'rwxrwxrwx') to octal integer
+                $octalPerms = $this->permStringToOctal($metadata['permissions']);
                 if (@chmod($filePath, $octalPerms) === false) {
-                    $this->logger->warning("Failed to restore permissions", ['file' => $filePath, 'perms' => $metadata['permissions']]);
+                    $this->logger->warning("Failed to restore permissions", ['file' => $filePath, 'perms' => $metadata['permissions'], 'octal' => decoct($octalPerms)]);
                     $success = false;
                 } else {
-                     $this->logger->debug("Restored permissions", ['file' => $filePath, 'perms' => $metadata['permissions']]);
+                     $this->logger->debug("Restored permissions", ['file' => $filePath, 'perms' => $metadata['permissions'], 'octal' => decoct($octalPerms)]);
                 }
             }
 

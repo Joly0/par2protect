@@ -8,6 +8,7 @@ use Par2Protect\Core\Exceptions\Par2ExecutionException;
 use Par2Protect\Services\Protection\Helpers\FormatHelper;
 use Par2Protect\Core\Commands\Par2CreateCommandBuilder;
 use Par2Protect\Core\Traits\ReadsFileSystemMetadata; // Added trait
+use Par2Protect\Services\Protection\ProtectionRepository;
 
 /**
  * Handles protection operations using par2 commands
@@ -20,6 +21,7 @@ class ProtectionOperations {
     private $formatHelper;
     private $eventSystem;
     private $createBuilder;
+    private $protectionRepository;
 
     /**
      * ProtectionOperations constructor
@@ -29,18 +31,21 @@ class ProtectionOperations {
         Config $config,
         FormatHelper $formatHelper,
         EventSystem $eventSystem,
-        Par2CreateCommandBuilder $createBuilder
+        Par2CreateCommandBuilder $createBuilder,
+        ProtectionRepository $protectionRepository
     ) {
         $this->logger = $logger;
         $this->config = $config;
         $this->formatHelper = $formatHelper;
         $this->eventSystem = $eventSystem;
         $this->createBuilder = $createBuilder;
+        $this->protectionRepository = $protectionRepository;
     }
 
     /**
      * Create PAR2 files for a given path (file or directory).
      * Handles different modes and file type filtering.
+     * Returns operation_id for multi-chunk operations to enable verification lookup.
      */
     public function createPar2Files(
         string $path,
@@ -62,6 +67,9 @@ class ProtectionOperations {
 
         $this->ensureDirectoryExists($parityDir);
 
+        // Generate operation ID for multi-chunk operations
+        $operationId = 'par2_' . substr(md5($par2Path . '_' . time() . '_' . rand()), 0, 16);
+
         $this->createBuilder
             ->setBasePath($basePath)
             ->setParityPath($par2Path)
@@ -72,11 +80,22 @@ class ProtectionOperations {
 
         if ($mode === 'file') {
             $this->createBuilder->addSourceFile($path);
-            return $this->executePar2Command($this->createBuilder->buildCommandString(), [$path]);
+            $result = $this->executePar2Command($this->createBuilder->buildCommandString(), [$path]);
+
+            // For single file operations, we don't need chunk tracking, just return the path
+            return $result;
         } elseif ($mode === 'directory') {
             $sourceFiles = $this->findSourceFiles($path, $fileTypes, $parityDir);
             if (empty($sourceFiles)) { throw new \Exception("No files found to protect in directory matching criteria: $path"); }
-            return $this->executePar2CommandWithFileList($this->createBuilder, $sourceFiles, $par2Path);
+
+            // Execute with chunking orchestration
+            return $this->executePar2CommandWithFileListAndChunking(
+                $this->createBuilder,
+                $sourceFiles,
+                $par2Path,
+                $operationId,
+                $path
+            );
         } else {
             throw new \InvalidArgumentException("Invalid protection mode specified: $mode");
         }
@@ -312,87 +331,458 @@ class ProtectionOperations {
         }
     }
 
-    /** Execute a single PAR2 create command by piping a file list to it. */
+    /** Execute PAR2 create command with file list, using multi-chunk processing when needed. */
     private function executePar2CommandWithFileList(Par2CreateCommandBuilder $builder, array $sourceFiles, string $par2Path): string {
         $tempDir = '/tmp/par2protect/file_lists';
         $this->ensureDirectoryExists($tempDir);
-        
+
         // Clean up old file lists to prevent disk space issues
         $cleanupCommand = "/usr/bin/find " . escapeshellarg($tempDir) . " -name 'par2_files_*.txt' -type f -mtime +1 -delete";
         exec($cleanupCommand, $cleanupOutput, $cleanupReturnCode);
         if ($cleanupReturnCode !== 0) {
             $this->logger->warning("Failed to clean up old file lists", ['command' => $cleanupCommand]);
         }
-        
+
         // Create a unique temporary file to hold the list of source files
         $timestamp = date('Ymd_His');
         $random = substr(md5(uniqid(rand(), true)), 0, 10);
         $fileListPath = $tempDir . '/par2_files_' . $timestamp . '_' . $random . '.txt';
-        
+
         // Write the null-terminated list of files
         $fileListContent = implode("\0", $sourceFiles);
         if (file_put_contents($fileListPath, $fileListContent) === false) {
             throw new \RuntimeException("Failed to write temporary file list: $fileListPath");
         }
         $this->logger->debug("Created temporary file list for par2 create", ['file' => $fileListPath, 'file_count' => count($sourceFiles)]);
-        
-        // Configure the builder to read the file list from stdin
-        $builder->setBlockCount(count($sourceFiles));
-        
-        // Build the base command string without the source file arguments
-        $baseCommandWithOptions = $builder->buildCommandString(false);
-        
+
+        // Note: Do NOT set blockCount here - it will be set per-chunk if chunking is needed
         // Generate a unique ID for logging purposes
         $uniqueId = 'par2_' . substr(md5($fileListPath), 0, 8);
-        
+
         try {
             // Calculate dynamic xargs parameters
             $xargsParams = $this->calculateXargsParameters($fileListPath, $uniqueId);
-            
+
             if ($xargsParams['chunk_needed']) {
-                $this->logger->info("Large file list detected, will use chunked processing", [
+                $this->logger->info("Large file list detected, using multi-chunk processing", [
                     'id' => $uniqueId,
                     'max_args' => $xargsParams['max_args'],
+                    'file_count' => count($sourceFiles),
+                    'estimated_chunks' => ceil(count($sourceFiles) / $xargsParams['max_args'])
+                ]);
+
+                // Use buildArgv() for safe argument construction (without source files for chunked processing)
+                $argv = $builder->buildArgv(false);
+
+                // Escape the base arguments for shell execution
+                $escapedBaseArgs = array_map('escapeshellarg', $argv);
+
+                // Construct the final command using xargs for chunked processing
+                $command = sprintf(
+                    "/bin/cat %s | /usr/bin/xargs -n %d -s %d -0 %s",
+                    escapeshellarg($fileListPath),
+                    $xargsParams['max_args'],
+                    $xargsParams['max_size'],
+                    implode(' ', $escapedBaseArgs)
+                );
+
+                $this->logger->debug("Executing par2 command with multi-chunk xargs", [
+                    'id' => $uniqueId,
+                    'command' => $command,
+                    'xargs_params' => $xargsParams,
+                    'base_argv_count' => count($baseArgv)
+                ]);
+
+                // Execute the command
+                $this->executePar2Command($command, $sourceFiles);
+                return $par2Path;
+
+            } else {
+                // Single chunk processing - use traditional approach for compatibility
+                $this->logger->debug("Using single-chunk processing", [
+                    'id' => $uniqueId,
                     'file_count' => count($sourceFiles)
                 ]);
-            }
-            
-            // Validate xargs parameters
-            if ($xargsParams['max_args'] < 1 || $xargsParams['max_size'] < 1024) {
-                $this->logger->warning("Invalid xargs parameters, using fallback", [
+
+                // Build the base command string without the source file arguments
+                $baseCommandWithOptions = $builder->buildCommandString(false);
+
+                // Construct the final command using xargs to convert piped file list into command line arguments
+                $command = sprintf(
+                    "/bin/cat %s | /usr/bin/xargs -n %d -s %d -0 %s --",
+                    escapeshellarg($fileListPath),
+                    $xargsParams['max_args'],
+                    $xargsParams['max_size'],
+                    $baseCommandWithOptions
+                );
+
+                $this->logger->debug("Executing par2 command with single-chunk xargs", [
                     'id' => $uniqueId,
-                    'max_args' => $xargsParams['max_args'],
-                    'max_size' => $xargsParams['max_size']
+                    'command' => $command,
+                    'xargs_params' => $xargsParams
                 ]);
-                $xargsParams['max_args'] = 1000;
-                $xargsParams['max_size'] = 131072;
+
+                // Execute the command
+                $this->executePar2Command($command, $sourceFiles);
+                return $par2Path;
             }
-            
-            // Construct the final command using xargs to convert piped file list into command line arguments
-            $command = sprintf(
-                "/bin/cat %s | /usr/bin/xargs -n %d -s %d -0 %s --",
-                escapeshellarg($fileListPath),
-                $xargsParams['max_args'],
-                $xargsParams['max_size'],
-                $baseCommandWithOptions
-            );
-            
-            $this->logger->debug("Executing par2 command with xargs", [
-                'id' => $uniqueId,
-                'command' => $command,
-                'xargs_params' => $xargsParams
-            ]);
-            
-            // Execute the command
-            $this->executePar2Command($command, $sourceFiles);
-            return $par2Path;
-            
+
         } catch (\Exception $e) {
             // In case of an error, log it and keep the temp file for debugging
             $this->logger->error("Par2 command with xargs failed, keeping temp file for debugging.", [
                 'id' => $uniqueId,
                 'file' => $fileListPath,
                 'error' => $e->getMessage()
+            ]);
+            throw $e;
+        } finally {
+            // Optionally, uncomment the line below to clean up the temp file immediately after execution
+            // @unlink($fileListPath);
+        }
+    }
+
+    /**
+     * Execute PAR2 command with chunking orchestration and database persistence.
+     * Now accepts builder to properly set block count per chunk.
+     */
+    private function executePar2CommandWithChunking(
+        Par2CreateCommandBuilder $builder,
+        array $sourceFiles,
+        string $par2Path,
+        string $operationId,
+        string $targetRoot
+    ): string {
+        $startTime = microtime(true);
+        $totalFiles = count($sourceFiles);
+
+        try {
+            // Split files into chunks for processing with per-chunk block count
+            $chunks = $this->splitFilesIntoChunks($sourceFiles, $builder, $par2Path, $operationId, $targetRoot);
+
+            // Process each chunk
+            $successfulChunks = 0;
+            $failedChunks = [];
+
+            foreach ($chunks as $chunkIndex => $chunkData) {
+                $chunkStartTime = microtime(true);
+
+                try {
+                    $this->logger->info("Processing chunk", [
+                        'operation_id' => $operationId,
+                        'chunk_index' => $chunkIndex,
+                        'chunk_file_count' => $chunkData['file_count'],
+                        'total_chunks' => count($chunks)
+                    ]);
+
+                    // Execute the chunk command
+                    $chunkCommand = $chunkData['command'];
+                    $chunkFiles = $chunkData['files'];
+
+                    $this->executePar2Command($chunkCommand, $chunkFiles);
+
+                    $elapsedMs = round((microtime(true) - $chunkStartTime) * 1000);
+
+                    // Record successful chunk in database with unique parity path
+                    $this->protectionRepository->upsertChunk([
+                        'operation_id' => $operationId,
+                        'target_root' => $targetRoot,
+                        'chunk_index' => $chunkIndex,
+                        'file_count' => $chunkData['file_count'],
+                        'filelist_hash' => $chunkData['filelist_hash'] ?? null,
+                        'parity_path' => $chunkData['parity_path'],
+                        'command' => $chunkCommand,
+                        'status' => 'COMPLETED',
+                        'return_code' => 0,
+                        'elapsed_ms' => $elapsedMs
+                    ]);
+
+                    $successfulChunks++;
+                    $this->logger->debug("Chunk completed successfully", [
+                        'operation_id' => $operationId,
+                        'chunk_index' => $chunkIndex,
+                        'elapsed_ms' => $elapsedMs
+                    ]);
+
+                } catch (\Exception $e) {
+                    $elapsedMs = round((microtime(true) - $chunkStartTime) * 1000);
+
+                    // Record failed chunk in database with unique parity path
+                    $this->protectionRepository->upsertChunk([
+                        'operation_id' => $operationId,
+                        'target_root' => $targetRoot,
+                        'chunk_index' => $chunkIndex,
+                        'file_count' => $chunkData['file_count'],
+                        'filelist_hash' => $chunkData['filelist_hash'] ?? null,
+                        'parity_path' => $chunkData['parity_path'],
+                        'command' => $chunkData['command'],
+                        'status' => 'FAILED',
+                        'return_code' => $e->getCode() ?: 1,
+                        'elapsed_ms' => $elapsedMs
+                    ]);
+
+                    $failedChunks[] = $chunkIndex;
+                    $this->logger->error("Chunk failed", [
+                        'operation_id' => $operationId,
+                        'chunk_index' => $chunkIndex,
+                        'error' => $e->getMessage(),
+                        'elapsed_ms' => $elapsedMs
+                    ]);
+                }
+            }
+
+            $totalElapsedMs = round((microtime(true) - $startTime) * 1000);
+
+            $this->logger->info("Chunking operation completed", [
+                'operation_id' => $operationId,
+                'total_files' => $totalFiles,
+                'total_chunks' => count($chunks),
+                'successful_chunks' => $successfulChunks,
+                'failed_chunks' => count($failedChunks),
+                'total_elapsed_ms' => $totalElapsedMs
+            ]);
+
+            if (!empty($failedChunks)) {
+                throw new \RuntimeException(
+                    "Operation completed with failures. Failed chunks: " . implode(', ', $failedChunks)
+                );
+            }
+
+            // For chunked operations, return the parity directory so verification can find all chunks
+            return dirname($par2Path);
+
+        } catch (\Exception $e) {
+            $totalElapsedMs = round((microtime(true) - $startTime) * 1000);
+
+            $this->logger->error("Chunking operation failed", [
+                'operation_id' => $operationId,
+                'error' => $e->getMessage(),
+                'total_elapsed_ms' => $totalElapsedMs
+            ]);
+
+            throw $e;
+        }
+    }
+
+    /**
+     * Split files into chunks for processing with per-chunk command building.
+     * This method now accepts a builder instead of a base command to properly
+     * set block count per chunk.
+     */
+    private function splitFilesIntoChunks(
+        array $sourceFiles,
+        Par2CreateCommandBuilder $builder,
+        string $par2Path,
+        string $operationId,
+        string $targetRoot
+    ): array {
+        $totalFiles = count($sourceFiles);
+        
+        // Calculate optimal chunk size based on par2 limits and system constraints
+        $par2FileLimit = 32768;
+        $conservativeLimit = 10000; // Conservative limit for stability
+        $chunkSize = min($conservativeLimit, $par2FileLimit);
+        
+        $chunks = [];
+
+        // Create temporary directory for chunk file lists
+        $tempDir = '/tmp/par2protect/chunk_lists';
+        $this->ensureDirectoryExists($tempDir);
+
+        // Clean up old chunk lists
+        $cleanupCommand = "/usr/bin/find " . escapeshellarg($tempDir) . " -name 'chunk_*.txt' -type f -mtime +1 -delete";
+        exec($cleanupCommand, $cleanupOutput, $cleanupReturnCode);
+
+        $this->logger->info("Splitting files into chunks", [
+            'operation_id' => $operationId,
+            'total_files' => $totalFiles,
+            'chunk_size' => $chunkSize,
+            'estimated_chunks' => ceil($totalFiles / $chunkSize)
+        ]);
+
+        for ($i = 0; $i < $totalFiles; $i += $chunkSize) {
+            $chunkFiles = array_slice($sourceFiles, $i, $chunkSize);
+            $chunkIndex = intval($i / $chunkSize);
+            $chunkFileCount = count($chunkFiles);
+
+            // Create chunk file list
+            $timestamp = date('Ymd_His');
+            $random = substr(md5(uniqid(rand(), true)), 0, 8);
+            $chunkFileListPath = $tempDir . '/chunk_' . $timestamp . '_' . $random . '_index_' . $chunkIndex . '.txt';
+
+            // Write the null-terminated list of files for this chunk
+            $chunkFileListContent = implode("\0", $chunkFiles);
+            if (file_put_contents($chunkFileListPath, $chunkFileListContent) === false) {
+                throw new \RuntimeException("Failed to write chunk file list: $chunkFileListPath");
+            }
+
+            // Create unique par2 file name for this chunk
+            // Example: par2_test_large.par2 -> par2_test_large_chunk_000.par2
+            $par2PathInfo = pathinfo($par2Path);
+            $chunkPar2Path = $par2PathInfo['dirname'] . '/' .
+                             $par2PathInfo['filename'] . '_chunk_' .
+                             str_pad($chunkIndex, 3, '0', STR_PAD_LEFT) . '.' .
+                             $par2PathInfo['extension'];
+            
+            // CRITICAL FIX: Set block count based on THIS chunk's file count, not total
+            $builder->setBlockCount($chunkFileCount);
+            
+            // Set the unique parity path for this chunk
+            $builder->setParityPath($chunkPar2Path);
+            
+            // Build argv for this specific chunk with correct block count and unique path
+            $argv = $builder->buildArgv(false);
+            
+            // Escape the arguments for shell execution
+            $escapedArgs = array_map('escapeshellarg', $argv);
+            
+            // Calculate appropriate size limit for xargs based on average path length
+            // Add safety buffer to account for command overhead
+            $avgPathLength = strlen(implode('', $chunkFiles)) / $chunkFileCount;
+            $safeMaxSize = min(1000000, intval($avgPathLength * $chunkFileCount * 1.5));
+            
+            // Generate chunk-specific command with per-chunk block count
+            // CRITICAL: Use both -n and -s to ensure ONE invocation per chunk
+            // Without -s, xargs uses conservative default (~128KB) and splits into multiple calls
+            $chunkCommand = sprintf(
+                "/bin/cat %s | /usr/bin/xargs -n %d -s %d -0 %s",
+                escapeshellarg($chunkFileListPath),
+                $chunkFileCount,  // Max arguments: all files in this chunk
+                $safeMaxSize,      // Max size: calculated based on path lengths
+                implode(' ', $escapedArgs)
+            );
+
+            // Calculate file list hash for verification
+            $filelistHash = hash('sha256', $chunkFileListContent);
+
+            $chunks[] = [
+                'files' => $chunkFiles,
+                'file_count' => $chunkFileCount,
+                'command' => $chunkCommand,
+                'filelist_path' => $chunkFileListPath,
+                'filelist_hash' => $filelistHash,
+                'parity_path' => $chunkPar2Path
+            ];
+
+            $this->logger->debug("Created chunk with correct block count and unique par2 path", [
+                'operation_id' => $operationId,
+                'chunk_index' => $chunkIndex,
+                'file_count' => $chunkFileCount,
+                'block_count' => $chunkFileCount,
+                'parity_path' => $chunkPar2Path,
+                'filelist_hash' => substr($filelistHash, 0, 16)
+            ]);
+        }
+
+        return $chunks;
+    }
+
+    /**
+     * Execute PAR2 create command with file list and chunking orchestration with database persistence.
+     */
+    private function executePar2CommandWithFileListAndChunking(
+        Par2CreateCommandBuilder $builder,
+        array $sourceFiles,
+        string $par2Path,
+        string $operationId,
+        string $targetRoot
+    ): string {
+        $tempDir = '/tmp/par2protect/file_lists';
+        $this->ensureDirectoryExists($tempDir);
+
+        // Clean up old file lists to prevent disk space issues
+        $cleanupCommand = "/usr/bin/find " . escapeshellarg($tempDir) . " -name 'par2_files_*.txt' -type f -mtime +1 -delete";
+        exec($cleanupCommand, $cleanupOutput, $cleanupReturnCode);
+        if ($cleanupReturnCode !== 0) {
+            $this->logger->warning("Failed to clean up old file lists", ['command' => $cleanupCommand]);
+        }
+
+        // Create a unique temporary file to hold the list of source files
+        $timestamp = date('Ymd_His');
+        $random = substr(md5(uniqid(rand(), true)), 0, 10);
+        $fileListPath = $tempDir . '/par2_files_' . $timestamp . '_' . $random . '.txt';
+
+        // Write the null-terminated list of files
+        $fileListContent = implode("\0", $sourceFiles);
+        if (file_put_contents($fileListPath, $fileListContent) === false) {
+            throw new \RuntimeException("Failed to write temporary file list: $fileListPath");
+        }
+        $this->logger->debug("Created temporary file list for chunked par2 create", [
+            'file' => $fileListPath,
+            'file_count' => count($sourceFiles),
+            'operation_id' => $operationId
+        ]);
+
+        // Note: Do NOT set blockCount here - it will be set per-chunk if chunking is needed
+        // Generate a unique ID for logging purposes
+        $uniqueId = 'par2_' . substr(md5($fileListPath), 0, 8);
+
+        try {
+            // Calculate dynamic xargs parameters
+            $xargsParams = $this->calculateXargsParameters($fileListPath, $uniqueId);
+
+            if ($xargsParams['chunk_needed']) {
+                $this->logger->info("Large file list detected, using multi-chunk processing with database persistence", [
+                    'id' => $uniqueId,
+                    'max_args' => $xargsParams['max_args'],
+                    'file_count' => count($sourceFiles),
+                    'estimated_chunks' => ceil(count($sourceFiles) / $xargsParams['max_args']),
+                    'operation_id' => $operationId
+                ]);
+
+                $this->logger->debug("Using chunked processing with per-chunk block count", [
+                    'id' => $uniqueId,
+                    'file_count' => count($sourceFiles),
+                    'xargs_params' => $xargsParams,
+                    'operation_id' => $operationId
+                ]);
+
+                // Execute with chunk orchestration - builder will set block count per chunk
+                $result = $this->executePar2CommandWithChunking($builder, $sourceFiles, $par2Path, $operationId, $targetRoot);
+                return $result;
+
+            } else {
+                // Single chunk processing - set block count for the full file set
+                $fileCount = count($sourceFiles);
+                $builder->setBlockCount($fileCount);
+                
+                $this->logger->debug("Using single-chunk processing", [
+                    'id' => $uniqueId,
+                    'file_count' => $fileCount,
+                    'block_count' => $fileCount,
+                    'operation_id' => $operationId
+                ]);
+
+                // Build the base command string without the source file arguments
+                $baseCommandWithOptions = $builder->buildCommandString(false);
+
+                // Construct the final command using xargs to convert piped file list into command line arguments
+                $command = sprintf(
+                    "/bin/cat %s | /usr/bin/xargs -n %d -s %d -0 %s --",
+                    escapeshellarg($fileListPath),
+                    $xargsParams['max_args'],
+                    $xargsParams['max_size'],
+                    $baseCommandWithOptions
+                );
+
+                $this->logger->debug("Executing par2 command with single-chunk xargs", [
+                    'id' => $uniqueId,
+                    'command' => $command,
+                    'xargs_params' => $xargsParams,
+                    'operation_id' => $operationId
+                ]);
+
+                // Execute the command (single chunk, no database persistence needed beyond normal operation)
+                $this->executePar2Command($command, $sourceFiles);
+                return $par2Path;
+            }
+
+        } catch (\Exception $e) {
+            // In case of an error, log it and keep the temp file for debugging
+            $this->logger->error("Par2 command with xargs failed, keeping temp file for debugging.", [
+                'id' => $uniqueId,
+                'file' => $fileListPath,
+                'error' => $e->getMessage(),
+                'operation_id' => $operationId
             ]);
             throw $e;
         } finally {
@@ -442,8 +832,12 @@ class ProtectionOperations {
                 // Mode is "Individual Files - ...", par2Path is the specific .parity-category directory
                 $parityDirToRemove = $par2Path;
                 $this->logger->debug("Identified individual PAR2 files directory for removal", ['directory' => $parityDirToRemove]);
+            } elseif ($mode === 'directory' && is_dir($par2Path)) {
+                 // Mode is 'directory', par2Path is the parity directory itself (chunked files case)
+                 $parityDirToRemove = $par2Path;
+                 $this->logger->debug("Identified chunked PAR2 directory for removal", ['directory' => $parityDirToRemove]);
             } elseif ($mode === 'directory' && is_file($par2Path)) {
-                 // Mode is 'directory', par2Path is a file inside the standard .parity directory
+                 // Mode is 'directory', par2Path is a file inside the standard .parity directory (single file case)
                  $parityDirToRemove = dirname($par2Path);
                  $this->logger->debug("Identified standard PAR2 directory for removal", ['directory' => $parityDirToRemove]);
             } elseif ($mode === 'file' && is_file($par2Path)) {
@@ -531,6 +925,76 @@ class ProtectionOperations {
         $parityDir = rtrim($parentDir, '/') . '/' . $parityDirBase . $subDir;
         $this->logger->debug("Determined parity directory path", ['path' => $path, 'mode' => $mode, 'parity_dir' => $parityDir]);
         return $parityDir;
+    }
+
+    /**
+     * Get operation metadata for verification
+     */
+    public function getOperationMetadataForVerification(string $targetRoot): ?array {
+        try {
+            $this->logger->debug("Retrieving operation metadata for verification", [
+                'target_root' => $targetRoot
+            ]);
+
+            $latestOperation = $this->protectionRepository->getLatestOperationForTarget($targetRoot);
+
+            if ($latestOperation) {
+                $operationMetadata = [
+                    'operation_id' => $latestOperation['operation_id'],
+                    'target_root' => $targetRoot,
+                    'created_at' => $latestOperation['latest_created_at'],
+                    'chunks' => $latestOperation['chunks'] ?? []
+                ];
+
+                $this->logger->debug("Retrieved operation metadata for verification", [
+                    'target_root' => $targetRoot,
+                    'operation_id' => $operationMetadata['operation_id'],
+                    'chunk_count' => count($operationMetadata['chunks'])
+                ]);
+
+                return $operationMetadata;
+            }
+
+            $this->logger->debug("No operation metadata found for target", [
+                'target_root' => $targetRoot
+            ]);
+
+            return null;
+
+        } catch (\Exception $e) {
+            $this->logger->error("Failed to retrieve operation metadata for verification", [
+                'target_root' => $targetRoot,
+                'error' => $e->getMessage()
+            ]);
+            return null;
+        }
+    }
+
+    /**
+     * Get chunks by operation ID for verification
+     */
+    public function getChunksByOperationId(string $operationId): array {
+        try {
+            $this->logger->debug("Retrieving chunks for verification", [
+                'operation_id' => $operationId
+            ]);
+
+            $chunks = $this->protectionRepository->getChunksByOperationId($operationId);
+
+            $this->logger->debug("Retrieved chunks for verification", [
+                'operation_id' => $operationId,
+                'chunk_count' => count($chunks)
+            ]);
+
+            return $chunks;
+
+        } catch (\Exception $e) {
+            $this->logger->error("Failed to retrieve chunks for verification", [
+                'operation_id' => $operationId,
+                'error' => $e->getMessage()
+            ]);
+            return [];
+        }
     }
 
 } // End of class ProtectionOperations

@@ -46,45 +46,23 @@ class VerificationOperations {
         $isIndividualFiles = strpos($mode, 'Individual Files') === 0;
         $basePath = ($mode === 'directory' || $isIndividualFiles) ? $path : dirname($path);
 
-        // Standard verification for regular files and directories
-        if (!$isIndividualFiles || !is_dir($par2Path)) {
-            $this->logger->debug("DIAGNOSTIC: Par2 command construction for standard mode", [ /* context */ ]);
+        // Check if par2Path is a directory (chunked files or Individual Files mode)
+        if (is_dir($par2Path)) {
+            // Multi-file verification: par2Path is a directory containing multiple .par2 files
+            $this->logger->debug("DIAGNOSTIC: Par2 path is a directory, using multi-file verification", [
+                'par2_path' => $par2Path,
+                'mode' => $mode
+            ]);
 
-            $command = $this->verifyBuilder
-                ->setBasePath($basePath)
-                ->setParityPath($par2Path)
-                ->setQuiet(true)
-                ->buildCommandString();
-
-            $this->logger->debug("Executing par2 command", ['command' => $command]);
-            exec($command . ' 2>&1', $output, $returnCode);
-
-            $outputStr = implode("\n", $output);
-            $status = 'UNKNOWN';
-            $details = $outputStr; // Store output as details
-
-            if ($returnCode === 0) {
-                $status = 'VERIFIED';
-            } elseif (strpos($outputStr, 'damaged') !== false) {
-                $status = 'DAMAGED';
-            } elseif (strpos($outputStr, 'missing') !== false) {
-                $status = 'MISSING';
-            } else {
-                 $this->logger->error("Par2 verify command failed with unexpected output", [ /* context */ ]);
-                throw new Par2ExecutionException("Par2 verify command failed unexpectedly", $command, $returnCode, $outputStr);
-            }
-            // Return array for standard mode
-            return ['status' => $status, 'details' => $details];
-
-        } else { // For Individual Files mode ($isIndividualFiles && is_dir($par2Path))
-            $this->logger->debug("DIAGNOSTIC: Individual Files mode detected, par2_path is a directory", [ /* context */ ]);
-
-            $par2Files = glob($par2Path . '/*.par2');
+            $par2Files = glob(rtrim($par2Path, '/') . '/*.par2');
             $mainPar2Files = [];
             foreach ($par2Files as $file) {
                 if (!preg_match('/\.vol\d+\+\d+\.par2$/', $file)) { $mainPar2Files[] = $file; }
             }
-            $this->logger->debug("DIAGNOSTIC: Found main par2 files in directory", [ /* context */ ]);
+            $this->logger->debug("DIAGNOSTIC: Found main par2 files in directory", [
+                'par2_path' => $par2Path,
+                'main_par2_count' => count($mainPar2Files)
+            ]);
 
             if (count($mainPar2Files) === 0) {
                 // Return error status if no files found, instead of throwing exception directly
@@ -129,8 +107,44 @@ class VerificationOperations {
             // If errors occurred, ensure overall status reflects it
             if ($errorCount > 0) $overallStatus = 'ERROR';
 
-            // Return array for individual files mode
+            // Return array for multi-file mode
             return ['status' => $overallStatus, 'details' => $detailsSummary];
+            
+        } else {
+            // Standard single-file verification
+            $this->logger->debug("DIAGNOSTIC: Par2 command construction for standard mode", [
+                'par2_path' => $par2Path,
+                'mode' => $mode
+            ]);
+
+            $command = $this->verifyBuilder
+                ->setBasePath($basePath)
+                ->setParityPath($par2Path)
+                ->setQuiet(true)
+                ->buildCommandString();
+
+            $this->logger->debug("Executing par2 command", ['command' => $command]);
+            exec($command . ' 2>&1', $output, $returnCode);
+
+            $outputStr = implode("\n", $output);
+            $status = 'UNKNOWN';
+            $details = $outputStr;
+
+            if ($returnCode === 0) {
+                $status = 'VERIFIED';
+            } elseif (strpos($outputStr, 'damaged') !== false) {
+                $status = 'DAMAGED';
+            } elseif (strpos($outputStr, 'missing') !== false) {
+                $status = 'MISSING';
+            } else {
+                $this->logger->error("Par2 verify command failed with unexpected output", [
+                    'command' => $command,
+                    'return_code' => $returnCode,
+                    'output' => $outputStr
+                ]);
+                throw new Par2ExecutionException("Par2 verify command failed unexpectedly", $command, $returnCode, $outputStr);
+            }
+            return ['status' => $status, 'details' => $details];
         }
     }
 
@@ -149,40 +163,10 @@ class VerificationOperations {
         $isIndividualFiles = strpos($mode, 'Individual Files') === 0;
         $basePath = ($mode === 'directory' || $isIndividualFiles) ? $path : dirname($path);
 
-        // Standard repair for regular files and directories
-        if (!$isIndividualFiles || !is_dir($par2Path)) {
-            $this->logger->debug("DIAGNOSTIC: Par2 repair command construction for standard mode", [ /* context */ ]);
-
-            $command = $this->repairBuilder
-                ->setBasePath($basePath)
-                ->setParityPath($par2Path)
-                ->setQuiet(true)
-                ->buildCommandString();
-
-            $this->logger->debug("Executing par2 command", ['command' => $command]);
-            exec($command . ' 2>&1', $output, $returnCode);
-
-            $outputStr = implode("\n", $output);
-            $status = 'UNKNOWN';
-            $details = $outputStr; // Store output as details
-
-            if ($returnCode === 0 || strpos($outputStr, 'repair complete') !== false || strpos($outputStr, 'Repair is not required') !== false) {
-                 $status = 'REPAIRED'; // Treat "not required" as successfully repaired/verified state
-            } elseif (strpos($outputStr, 'repair is not possible') !== false || strpos($outputStr, 'repair not possible') !== false) {
-                if (strpos($outputStr, 'too many') !== false || strpos($outputStr, 'not enough recovery blocks') !== false) {
-                    $status = 'MISSING';
-                } else {
-                    $status = 'REPAIR_FAILED';
-                }
-            } else {
-                 $this->logger->error("Par2 repair command failed with unexpected output", [ /* context */ ]);
-                throw new Par2ExecutionException("Par2 repair command failed unexpectedly", $command, $returnCode, $outputStr);
-            }
-            // Return array for standard mode
-            return ['status' => $status, 'details' => $details];
-
-        } else { // For Individual Files mode ($isIndividualFiles && is_dir($par2Path))
-            $this->logger->debug("DIAGNOSTIC: Individual Files mode detected, par2_path is a directory", [ /* context */ ]);
+        // Check if par2Path is a directory (chunked files or Individual Files mode)
+        if (is_dir($par2Path)) {
+            // Multi-file repair: find all .par2 files in directory and repair each
+            $this->logger->debug("DIAGNOSTIC: Multi-file repair mode - par2_path is a directory", [ /* context */ ]);
 
             $par2Files = glob($par2Path . '/*.par2');
             $mainPar2Files = [];
@@ -241,8 +225,40 @@ class VerificationOperations {
 
             if ($errorCount > 0) $overallStatus = 'ERROR'; // Ensure overall status reflects errors
 
-            // Return array for individual files mode
+            // Return array for multi-file mode
             return ['status' => $overallStatus, 'details' => $detailsSummary];
+            
+        } else {
+            // Standard single-file repair
+            $this->logger->debug("DIAGNOSTIC: Par2 repair command construction for standard mode", [ /* context */ ]);
+
+            $command = $this->repairBuilder
+                ->setBasePath($basePath)
+                ->setParityPath($par2Path)
+                ->setQuiet(true)
+                ->buildCommandString();
+
+            $this->logger->debug("Executing par2 command", ['command' => $command]);
+            exec($command . ' 2>&1', $output, $returnCode);
+
+            $outputStr = implode("\n", $output);
+            $status = 'UNKNOWN';
+            $details = $outputStr; // Store output as details
+
+            if ($returnCode === 0 || strpos($outputStr, 'repair complete') !== false || strpos($outputStr, 'Repair is not required') !== false) {
+                 $status = 'REPAIRED'; // Treat "not required" as successfully repaired/verified state
+            } elseif (strpos($outputStr, 'repair is not possible') !== false || strpos($outputStr, 'repair not possible') !== false) {
+                if (strpos($outputStr, 'too many') !== false || strpos($outputStr, 'not enough recovery blocks') !== false) {
+                    $status = 'MISSING';
+                } else {
+                    $status = 'REPAIR_FAILED';
+                }
+            } else {
+                 $this->logger->error("Par2 repair command failed with unexpected output", [ /* context */ ]);
+                throw new Par2ExecutionException("Par2 repair command failed unexpectedly", $command, $returnCode, $outputStr);
+            }
+            // Return array for standard mode
+            return ['status' => $status, 'details' => $details];
         }
     }
 

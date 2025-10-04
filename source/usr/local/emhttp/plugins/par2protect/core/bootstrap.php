@@ -157,7 +157,8 @@ $container->register(ProtectionRepository::class, function ($c) {
 $container->register(ProtectionOperations::class, function ($c) {
     return new ProtectionOperations(
         $c->get('logger'), $c->get('config'), $c->get(FormatHelper::class),
-        $c->get('eventSystem'), $c->get(Par2CreateCommandBuilder::class)
+        $c->get('eventSystem'), $c->get(Par2CreateCommandBuilder::class),
+        $c->get(ProtectionRepository::class)
     );
 });
 
